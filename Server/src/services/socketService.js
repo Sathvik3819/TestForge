@@ -10,6 +10,8 @@ const {
 } = require("./sessionService");
 const { enqueueResultProcessing } = require("./resultQueue");
 
+const disconnectTimers = new Map();
+
 function getTokenFromSocket(socket) {
   return (
     socket.handshake?.auth?.token ||
@@ -18,15 +20,65 @@ function getTokenFromSocket(socket) {
   );
 }
 
+function normalizeAnswersInput(answers) {
+  if (!answers) return [];
+
+  if (Array.isArray(answers))
+    return answers.filter((item) => item && item.questionId);
+  return Object.entries(answers).map(([questionId, answer]) => ({
+    questionId,
+    answer,
+  }));
+}
+
+function validateAnswersAgainstExam(exam, answersInput) {
+  const normalized = normalizeAnswersInput(answersInput);
+  const questionMap = new Map(exam.questions.map((q) => [q._id.toString(), q]));
+
+  const validAnswers = [];
+  for (const ans of normalized) {
+    const question = questionMap.get(String(ans.questionId));
+    if (!question) continue;
+
+    const optionTexts = question.options.map((opt) => opt.text);
+    if (!optionTexts.includes(ans.answer)) continue;
+
+    validAnswers.push({ questionId: question._id, answer: ans.answer });
+  }
+
+  return validAnswers;
+}
+
+function getExamStatus(exam) {
+  if (!exam.published) return "Draft";
+
+  const now = Date.now();
+  const start = new Date(exam.startTime).getTime();
+  const end = start + Number(exam.duration) * 60 * 1000;
+
+  if (now < start) return "Scheduled";
+  if (now > end)
+    return exam.resultsPublished || exam.resultVisibility === "immediate"
+      ? "Completed"
+      : "Ended";
+  return "Active";
+}
+
 async function getMonitorSnapshot(examId) {
-  const sessions = await ExamSession.find({ exam: examId }).populate("user", "name email role");
+  const sessions = await ExamSession.find({ exam: examId }).populate(
+    "user",
+    "name email role",
+  );
   const now = Date.now();
   return sessions.map((session) => ({
     sessionId: session._id,
     user: session.user,
+    status: session.status,
     submitted: session.submitted,
+    endedReason: session.endedReason,
     warnings: session.warnings,
-    warningsCount: session.warnings.length,
+    warningsCount: session.warningsCount || session.warnings.length,
+    flagged: session.flagged,
     timeLeftMs: Math.max(0, new Date(session.endTime).getTime() - now),
     lastSeenAt: session.lastSeenAt,
     disconnectedAt: session.disconnectedAt,
@@ -35,7 +87,10 @@ async function getMonitorSnapshot(examId) {
 
 async function emitMonitorUpdate(io, examId) {
   const snapshot = await getMonitorSnapshot(examId);
-  io.to(`monitor:${examId}`).emit("admin:monitor:update", { examId, sessions: snapshot });
+  io.to(`monitor:${examId}`).emit("admin:monitor:update", {
+    examId,
+    sessions: snapshot,
+  });
 }
 
 async function submitSession(exam, session, answers, reason) {
@@ -44,12 +99,15 @@ async function submitSession(exam, session, answers, reason) {
   }
 
   if (answers) {
-    await saveAnswers(session, answers);
+    const validAnswers = validateAnswersAgainstExam(exam, answers);
+    await saveAnswers(session, validAnswers);
   }
 
   session.submitted = true;
   session.submittedAt = new Date();
   session.lastSeenAt = new Date();
+  session.status = "submitted";
+  session.endedReason = reason || "manual_submit";
 
   if (reason === "time_over") {
     session.warnings.push({
@@ -59,7 +117,17 @@ async function submitSession(exam, session, answers, reason) {
     });
   }
 
+  session.warningsCount = session.warnings.length;
+  if (session.warningsCount > 3) session.flagged = true;
+
   await session.save();
+  console.log("socket submit", {
+    examId: exam._id.toString(),
+    userId: session.user.toString(),
+    sessionId: session._id.toString(),
+    reason,
+  });
+
   await enqueueResultProcessing({
     sessionId: session._id.toString(),
     examId: exam._id.toString(),
@@ -67,6 +135,44 @@ async function submitSession(exam, session, answers, reason) {
   });
 
   return session;
+}
+
+function scheduleDisconnectAutoSubmit(io, exam, session) {
+  const key = `${session.exam.toString()}:${session.user.toString()}`;
+
+  if (disconnectTimers.has(key)) {
+    clearTimeout(disconnectTimers.get(key));
+  }
+
+  const timeout = setTimeout(async () => {
+    try {
+      const fresh = await ExamSession.findById(session._id);
+      if (!fresh || fresh.submitted) return;
+
+      await appendWarning(
+        fresh,
+        "disconnect_timeout",
+        "Auto submit due to prolonged disconnection",
+      );
+      await submitSession(exam, fresh, null, "disconnect_timeout");
+      await emitMonitorUpdate(io, exam._id.toString());
+    } catch (err) {
+      console.error("disconnect timeout submit failed:", err.message);
+    } finally {
+      disconnectTimers.delete(key);
+    }
+  }, 120000);
+
+  disconnectTimers.set(key, timeout);
+}
+
+function clearDisconnectAutoSubmit(examId, userId) {
+  const key = `${examId}:${userId}`;
+  const timeout = disconnectTimers.get(key);
+  if (timeout) {
+    clearTimeout(timeout);
+    disconnectTimers.delete(key);
+  }
 }
 
 function registerSocketHandlers(io) {
@@ -94,13 +200,47 @@ function registerSocketHandlers(io) {
           return;
         }
 
+        if (getExamStatus(exam) !== "Active") {
+          socket.emit("exam:error", { msg: "Exam is not active" });
+          return;
+        }
+
         const ownerId = clientId || socket.id;
-        const { session, timeLeftMs, resumeAnswers } = await startOrResumeSession({
-          exam,
-          userId: socket.user.id,
-          ownerId,
-          socketId: socket.id,
-        });
+        const { session, timeLeftMs, resumeAnswers, multipleLogin } =
+          await startOrResumeSession({
+            exam,
+            userId: socket.user.id,
+            ownerId,
+            socketId: socket.id,
+          });
+
+        if (multipleLogin) {
+          await ExamSession.updateMany(
+            {
+              exam: examId,
+              user: socket.user.id,
+              submitted: false,
+              _id: { $ne: session._id },
+            },
+            {
+              $set: {
+                submitted: true,
+                submittedAt: new Date(),
+                status: "invalidated",
+                isInvalidated: true,
+                endedReason: "multiple_login",
+              },
+            },
+          );
+
+          await appendWarning(
+            session,
+            "multiple_login",
+            "Previous session invalidated due to new login",
+          );
+        }
+
+        clearDisconnectAutoSubmit(exam._id.toString(), socket.user.id);
 
         socket.data.examId = examId;
         socket.data.sessionId = session._id.toString();
@@ -117,7 +257,10 @@ function registerSocketHandlers(io) {
           timeLeftMs: getTimeLeftMs(freshSession),
           endTime: freshSession.endTime,
           submitted: freshSession.submitted,
+          status: freshSession.status,
           warnings: freshSession.warnings,
+          warningsCount: freshSession.warningsCount,
+          flagged: freshSession.flagged,
           resumeAnswers,
         });
 
@@ -139,7 +282,7 @@ function registerSocketHandlers(io) {
               serverTime: new Date().toISOString(),
             });
 
-            if (liveSession.submitted) {
+            if (liveSession.submitted || liveSession.isInvalidated) {
               clearInterval(socket.data.timerInterval);
               socket.data.timerInterval = null;
               return;
@@ -163,46 +306,106 @@ function registerSocketHandlers(io) {
 
         await emitMonitorUpdate(io, examId);
       } catch (err) {
-        socket.emit("exam:error", { msg: "Failed to join exam", error: err.message });
+        socket.emit("exam:error", {
+          msg: "Failed to join exam",
+          error: err.message,
+        });
       }
     });
 
-    socket.on("exam:answer", async ({ examId, answers }) => {
+    const onAnswerUpdate = async ({ examId, answers }) => {
       try {
-        const session = await ExamSession.findOne({ exam: examId, user: socket.user.id });
-        if (!session || session.submitted) return;
+        const exam = await Exam.findById(examId);
+        if (!exam) return;
 
-        await saveAnswers(session, answers);
-        socket.emit("exam:ack", { ok: true, updatedAt: new Date().toISOString() });
+        const session = await ExamSession.findOne({
+          exam: examId,
+          user: socket.user.id,
+          submitted: false,
+        });
+        if (!session || session.isInvalidated) return;
+
+        const validAnswers = validateAnswersAgainstExam(exam, answers);
+        await saveAnswers(session, validAnswers);
+        socket.emit("exam:ack", {
+          ok: true,
+          updatedAt: new Date().toISOString(),
+        });
       } catch (err) {
-        socket.emit("exam:error", { msg: "Failed to save answer", error: err.message });
+        socket.emit("exam:error", {
+          msg: "Failed to save answer",
+          error: err.message,
+        });
       }
-    });
+    };
+
+    socket.on("exam:answer", onAnswerUpdate);
+    socket.on("answer:update", onAnswerUpdate);
 
     socket.on("exam:warning", async ({ examId, type, message }) => {
       try {
-        const session = await ExamSession.findOne({ exam: examId, user: socket.user.id });
+        const session = await ExamSession.findOne({
+          exam: examId,
+          user: socket.user.id,
+          submitted: false,
+        });
         if (!session) return;
 
-        await appendWarning(session, type || "warning", message || "Suspicious activity detected");
-        socket.emit("exam:warning:ack", { ok: true });
+        await appendWarning(
+          session,
+          type || "warning",
+          message || "Suspicious activity detected",
+        );
+
+        // refresh session in case appendWarning auto-submitted
+        const updated = await ExamSession.findById(session._id);
+
+        socket.emit("exam:warning:ack", {
+          ok: true,
+          warningsCount: updated.warningsCount,
+          flagged: updated.flagged,
+        });
+
+        if (updated.submitted) {
+          socket.emit("exam:submitted", {
+            sessionId: updated._id,
+            reason: updated.endedReason || "warnings_exceeded",
+            submittedAt: updated.submittedAt,
+          });
+        }
+
         await emitMonitorUpdate(io, examId);
       } catch (err) {
-        socket.emit("exam:error", { msg: "Failed to add warning", error: err.message });
+        socket.emit("exam:error", {
+          msg: "Failed to add warning",
+          error: err.message,
+        });
       }
     });
 
     socket.on("exam:submit", async ({ examId, answers }) => {
       try {
         const exam = await Exam.findById(examId);
-        const session = await ExamSession.findOne({ exam: examId, user: socket.user.id });
+        const session = await ExamSession.findOne({
+          exam: examId,
+          user: socket.user.id,
+          submitted: false,
+        });
         if (!exam || !session) {
           socket.emit("exam:error", { msg: "Session not found" });
           return;
         }
 
-        const submitted = await submitSession(exam, session, answers, "manual_submit");
-        socket.emit("exam:submitted", { sessionId: submitted._id, submittedAt: submitted.submittedAt });
+        const submitted = await submitSession(
+          exam,
+          session,
+          answers,
+          "manual_submit",
+        );
+        socket.emit("exam:submitted", {
+          sessionId: submitted._id,
+          submittedAt: submitted.submittedAt,
+        });
         await emitMonitorUpdate(io, examId);
       } catch (err) {
         socket.emit("exam:error", { msg: "Submit failed", error: err.message });
@@ -220,7 +423,10 @@ function registerSocketHandlers(io) {
         const snapshot = await getMonitorSnapshot(examId);
         socket.emit("admin:monitor:update", { examId, sessions: snapshot });
       } catch (err) {
-        socket.emit("exam:error", { msg: "Failed to join monitor", error: err.message });
+        socket.emit("exam:error", {
+          msg: "Failed to join monitor",
+          error: err.message,
+        });
       }
     });
 
@@ -233,14 +439,23 @@ function registerSocketHandlers(io) {
 
         if (!socket.data.examId || !socket.user?.id) return;
 
+        const exam = await Exam.findById(socket.data.examId);
+        if (!exam) return;
+
         const session = await ExamSession.findOne({
           exam: socket.data.examId,
           user: socket.user.id,
+          submitted: false,
         });
-        if (!session || session.submitted) return;
+        if (!session) return;
 
-        await appendWarning(session, "disconnect", "User disconnected during exam");
+        await appendWarning(
+          session,
+          "disconnect",
+          "User disconnected during exam",
+        );
         await markDisconnected(session);
+        scheduleDisconnectAutoSubmit(io, exam, session);
         await emitMonitorUpdate(io, socket.data.examId);
       } catch (err) {
         console.error("Socket disconnect handler failed:", err.message);

@@ -12,8 +12,8 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await login(email, password);
-      navigate('/dashboard');
+      const loggedInUser = await login(email, password);
+      navigate(loggedInUser?.role === 'admin' ? '/admin' : '/dashboard');
     } catch (err) {
       setError(err.response?.data?.msg || 'Login failed');
     }
@@ -21,13 +21,13 @@ export default function Login() {
 
   return (
     <div className='auth-wrap'>
-      <div className='card auth-card fade-up'>
+      <div className='card auth-card'>
         <h2 className='section-title'>Welcome back</h2>
         <p className='section-subtitle'>Log in to continue your assessment workflow.</p>
 
         {error && <div className='alert error'>{error}</div>}
 
-        <form onSubmit={handleSubmit}>
+        <form className='auth-form' onSubmit={handleSubmit}>
           <div>
             <label htmlFor='email'>Email Address</label>
             <input
@@ -52,12 +52,12 @@ export default function Login() {
             />
           </div>
 
-          <button type='submit'>Sign In</button>
+          <button type='submit' className='btn auth-submit'>Sign In</button>
         </form>
 
-        <p className='muted'>
+        <p className='auth-footnote'>
           New here?{' '}
-          <Link to='/signup' className='nav-link'>
+          <Link to='/signup' className='auth-link'>
             Create account
           </Link>
         </p>

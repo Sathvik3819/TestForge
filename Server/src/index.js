@@ -7,10 +7,17 @@ const mongoose = require("mongoose");
 const { ensureRedisConnection } = require("./services/redisClient");
 const { startResultWorker } = require("./services/resultQueue");
 const { registerSocketHandlers } = require("./services/socketService");
+const { createRateLimiter } = require("./middleware/rateLimit");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(
+  createRateLimiter({
+    windowMs: 60 * 1000,
+    maxRequests: 200,
+  }),
+);
 
 const server = http.createServer(app);
 const io = new Server(server, {

@@ -3,17 +3,28 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const auth = require("../middleware/auth");
+const { createRateLimiter } = require("../middleware/rateLimit");
+const { logAuthAttempt } = require("../services/auditLog");
 
 const router = express.Router();
+const authLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  maxRequests: 30,
+  keyFn: (req) => `auth:${req.ip}`,
+});
 
 function getJwtSecret() {
   return process.env.JWT_SECRET || "secret";
 }
 
 function signAuthToken(user) {
-  return jwt.sign({ id: user._id, email: user.email, role: user.role }, getJwtSecret(), {
-    expiresIn: "1d",
-  });
+  return jwt.sign(
+    { id: user._id, email: user.email, role: user.role },
+    getJwtSecret(),
+    {
+      expiresIn: "1d",
+    },
+  );
 }
 
 function sanitizeUser(user) {
@@ -29,11 +40,13 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-router.post("/signup", async (req, res) => {
+router.post("/signup", authLimiter, async (req, res) => {
   const { name, email, password, role } = req.body;
 
   if (!name || !email || !password) {
-    return res.status(400).json({ msg: "Name, email and password are required" });
+    return res
+      .status(400)
+      .json({ msg: "Name, email and password are required" });
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
@@ -42,7 +55,9 @@ router.post("/signup", async (req, res) => {
   }
 
   if (String(password).length < 6) {
-    return res.status(400).json({ msg: "Password must be at least 6 characters" });
+    return res
+      .status(400)
+      .json({ msg: "Password must be at least 6 characters" });
   }
 
   if (role && !["student", "admin"].includes(role)) {
@@ -76,7 +91,7 @@ router.post("/signup", async (req, res) => {
   }
 });
 
-router.post("/login", async (req, res) => {
+router.post("/login", authLimiter, async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
@@ -98,11 +113,16 @@ router.post("/login", async (req, res) => {
 
     const token = signAuthToken(user);
 
+    // Log successful login
+    logAuthAttempt(normalizedEmail, true);
+
     return res.json({
       token,
       user: sanitizeUser(user),
     });
   } catch (err) {
+    // Log failed login
+    logAuthAttempt(normalizedEmail, false, err.message);
     return res.status(500).json({ msg: "Login failed", error: err.message });
   }
 });
@@ -116,7 +136,9 @@ router.get("/me", auth, async (req, res) => {
 
     return res.json(user);
   } catch (err) {
-    return res.status(500).json({ msg: "Failed to fetch user", error: err.message });
+    return res
+      .status(500)
+      .json({ msg: "Failed to fetch user", error: err.message });
   }
 });
 

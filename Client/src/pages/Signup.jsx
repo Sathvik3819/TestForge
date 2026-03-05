@@ -23,13 +23,13 @@ export default function Signup() {
 
   return (
     <div className='auth-wrap'>
-      <div className='card auth-card fade-up'>
+      <div className='card auth-card'>
         <h2 className='section-title'>Create your account</h2>
         <p className='section-subtitle'>Set up your account and start using TestForge.</p>
 
         {error && <div className='alert error'>{error}</div>}
 
-        <form onSubmit={handleSubmit}>
+        <form className='auth-form' onSubmit={handleSubmit}>
           <div>
             <label htmlFor='name'>Full Name</label>
             <input
@@ -73,12 +73,12 @@ export default function Signup() {
             </select>
           </div>
 
-          <button type='submit'>Create Account</button>
+          <button type='submit' className='btn auth-submit'>Create Account</button>
         </form>
 
-        <p className='muted'>
+        <p className='auth-footnote'>
           Already registered?{' '}
-          <Link to='/login' className='nav-link'>
+          <Link to='/login' className='auth-link'>
             Log in
           </Link>
         </p>

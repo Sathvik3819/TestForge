@@ -13,11 +13,22 @@ const examSessionSchema = new mongoose.Schema(
         at: { type: Date, default: Date.now },
       },
     ],
+    warningsCount: { type: Number, default: 0 },
+    flagged: { type: Boolean, default: false, index: true },
     submitted: { type: Boolean, default: false },
     submittedAt: { type: Date, default: null },
     disconnectedAt: { type: Date, default: null },
     lastSeenAt: { type: Date, default: Date.now },
     activeSocketId: { type: String, default: null },
+    attemptNo: { type: Number, default: 1, min: 1 },
+    status: {
+      type: String,
+      enum: ["active", "submitted", "invalidated"],
+      default: "active",
+      index: true,
+    },
+    endedReason: { type: String, default: null },
+    isInvalidated: { type: Boolean, default: false },
     answers: [{ questionId: mongoose.Schema.Types.ObjectId, answer: String }],
     resumePoint: {
       lastQuestionId: { type: mongoose.Schema.Types.ObjectId, default: null },
@@ -25,10 +36,11 @@ const examSessionSchema = new mongoose.Schema(
       updatedAt: { type: Date, default: null },
     },
     resultProcessed: { type: Boolean, default: false },
+    archivedAt: { type: Date, default: null },
   },
   { timestamps: true },
 );
 
-examSessionSchema.index({ user: 1, exam: 1 }, { unique: true });
+examSessionSchema.index({ user: 1, exam: 1 });
 
 module.exports = mongoose.model("ExamSession", examSessionSchema);

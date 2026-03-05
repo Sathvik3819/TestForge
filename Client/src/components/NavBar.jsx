@@ -6,7 +6,7 @@ export default function NavBar() {
   const { user, logout } = useContext(AuthContext);
 
   return (
-    <header className='nav-wrap'>
+    <header className='nav-wrap shadow'>
       <nav className='navbar'>
         <Link to='/' className='brand'>
           TestForge
@@ -19,11 +19,11 @@ export default function NavBar() {
                 Dashboard
               </Link>
               <Link to='/exams' className='nav-link'>
-                Exams
+                Start Exam
               </Link>
               {user.role === 'admin' && (
-                <Link to='/create-exam' className='nav-link'>
-                  Create Exam
+                <Link to='/admin' className='nav-link'>
+                  Admin Panel
                 </Link>
               )}
               <button onClick={logout} className='nav-action'>
@@ -43,15 +43,6 @@ export default function NavBar() {
         </div>
       </nav>
 
-      <div className='nav-sub'>
-        <div className='nav-sub-inner'>
-          <span>Live Assessments</span>
-          <span>Practice Papers</span>
-          <span>Create Exam</span>
-          <span>Security Signals</span>
-          <span>Support</span>
-        </div>
-      </div>
     </header>
   );
 }

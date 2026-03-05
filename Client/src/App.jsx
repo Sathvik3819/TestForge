@@ -2,13 +2,16 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import NavBar from './components/NavBar';
 import ProtectedRoute from './components/ProtectedRoute';
-import Home from './pages/Home';
+import RoleRoute from './components/RoleRoute';
+import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
-import Dashboard from './pages/Dashboard';
+import UserDashboard from './pages/Dashboard';
+import AdminPanel from './pages/AdminPanel';
 import ExamList from './pages/ExamList';
 import ExamPage from './pages/ExamPage';
-import Admin from './pages/Admin';
+import ExamResults from './pages/ExamResults';
+import Results from './pages/Results';
 import './App.css';
 
 function App() {
@@ -19,14 +22,24 @@ function App() {
           <NavBar />
           <main className='page-shell'>
             <Routes>
-              <Route path='/' element={<Home />} />
+              <Route path='/' element={<Landing />} />
               <Route path='/login' element={<Login />} />
               <Route path='/signup' element={<Signup />} />
               <Route
                 path='/dashboard'
                 element={
                   <ProtectedRoute>
-                    <Dashboard />
+                    <UserDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path='/admin'
+                element={
+                  <ProtectedRoute>
+                    <RoleRoute roles={['admin']}>
+                      <AdminPanel />
+                    </RoleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -47,18 +60,18 @@ function App() {
                 }
               />
               <Route
-                path='/create-exam'
+                path='/exam/:examId/results'
                 element={
                   <ProtectedRoute>
-                    <Admin />
+                    <ExamResults />
                   </ProtectedRoute>
                 }
               />
               <Route
-                path='/admin'
+                path='/results'
                 element={
                   <ProtectedRoute>
-                    <Admin />
+                    <Results />
                   </ProtectedRoute>
                 }
               />

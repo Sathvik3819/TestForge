@@ -3,13 +3,14 @@ const ExamSession = require("../models/ExamSession");
 const Exam = require("../models/Exam");
 const Result = require("../models/Result");
 const { getBullRedisOptions } = require("./redisClient");
+const { logResultGenerated } = require("./auditLog");
 
 let resultQueue = null;
 let workerStarted = false;
 
 function getResultQueue() {
   if (!resultQueue) {
-    resultQueue = new Bull("result-processing", {
+    resultQueue = new Bull("result_processing_queue", {
       redis: getBullRedisOptions(),
       defaultJobOptions: {
         attempts: 3,
@@ -30,20 +31,54 @@ async function calculateResult(sessionId) {
   if (!exam) throw new Error("Exam not found");
 
   const answerMap = new Map(
-    (session.answers || []).map((item) => [item.questionId.toString(), item.answer]),
+    (session.answers || []).map((item) => [
+      item.questionId.toString(),
+      item.answer,
+    ]),
   );
 
-  const total = exam.questions.length;
-  let score = 0;
+  // Calculate score using formula: (correct_answers × marks) - (wrong_answers × negative_marks)
+  let totalScore = 0;
+  let correctCount = 0;
+  let wrongCount = 0;
 
   exam.questions.forEach((question) => {
     const answer = answerMap.get(question._id.toString());
-    if (answer && String(answer).trim() === String(question.correctAnswer).trim()) {
-      score += 1;
+    const isCorrect =
+      answer && String(answer).trim() === String(question.correctAnswer).trim();
+
+    if (isCorrect) {
+      totalScore += Number(question.marks || 1);
+      correctCount += 1;
+    } else {
+      // Apply negative marking only if an answer was given
+      if (answer) {
+        totalScore -= Number(question.negativeMarks || 0);
+        wrongCount += 1;
+      } else {
+        // Unanswered questions don't get negative marks
+      }
     }
   });
 
-  const percentage = total ? Number(((score / total) * 100).toFixed(2)) : 0;
+  // Ensure score doesn't go below 0
+  const score = Math.max(0, totalScore);
+  const total = exam.questions.length;
+  const percentage =
+    exam.totalMarks > 0
+      ? Number(((score / exam.totalMarks) * 100).toFixed(2))
+      : 0;
+
+  const timeTakenSeconds = session.submittedAt
+    ? Math.max(
+        0,
+        Math.round(
+          (new Date(session.submittedAt).getTime() -
+            new Date(session.startTime).getTime()) /
+            1000,
+        ),
+      )
+    : 0;
 
   const result = await Result.findOneAndUpdate(
     { session: session._id },
@@ -52,8 +87,11 @@ async function calculateResult(sessionId) {
       user: session.user,
       exam: session.exam,
       score,
+      correctAnswers: correctCount,
+      wrongAnswers: wrongCount,
       total,
       percentage,
+      timeTakenSeconds,
       warningsCount: session.warnings.length,
       processedAt: new Date(),
     },
@@ -61,14 +99,50 @@ async function calculateResult(sessionId) {
   );
 
   session.resultProcessed = true;
+  session.archivedAt = new Date();
   await session.save();
+
+  const shouldComplete =
+    exam.resultVisibility === "immediate" ||
+    exam.resultsPublished ||
+    exam.status === "Ended";
+  if (shouldComplete && exam.status !== "Completed") {
+    exam.status = "Completed";
+    await exam.save();
+  }
+
+  // Log result generated
+  logResultGenerated(
+    session._id.toString(),
+    exam._id.toString(),
+    session.user.toString(),
+    score,
+    exam.totalMarks,
+    percentage,
+  );
+
+  console.log("result generated", {
+    sessionId: session._id.toString(),
+    examId: exam._id.toString(),
+    userId: session.user.toString(),
+    score,
+    total,
+  });
 
   return result;
 }
 
 async function enqueueResultProcessing({ sessionId, examId, userId }) {
-  const queue = getResultQueue();
-  await queue.add("calculate-result", { sessionId, examId, userId });
+  try {
+    const queue = getResultQueue();
+    await queue.add("calculate-result", { sessionId, examId, userId });
+  } catch (err) {
+    console.error(
+      "Queue unavailable, falling back to inline result calculation:",
+      err.message,
+    );
+    await calculateResult(sessionId);
+  }
 }
 
 function startResultWorker() {
