@@ -1,6 +1,6 @@
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!res.locals.user || !roles.includes(res.locals.user.role)) {
       return res.status(403).json({ msg: "Forbidden: insufficient role" });
     }
 

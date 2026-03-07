@@ -6,6 +6,7 @@ const auth = require("../middleware/auth");
 const { createRateLimiter } = require("../middleware/rateLimit");
 const { logAuthAttempt } = require("../services/auditLog");
 
+
 const router = express.Router();
 const authLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
@@ -33,6 +34,7 @@ function sanitizeUser(user) {
     name: user.name,
     email: user.email,
     role: user.role,
+    createdAt: user.createdAt,
   };
 }
 
@@ -129,16 +131,78 @@ router.post("/login", authLimiter, async (req, res) => {
 
 router.get("/me", auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select("-password");
+    const user = await User.findById(res.locals.user?.id).select("-password");
     if (!user) {
       return res.status(404).json({ msg: "User not found" });
     }
 
-    return res.json(user);
+    return res.json(sanitizeUser(user));
   } catch (err) {
     return res
       .status(500)
       .json({ msg: "Failed to fetch user", error: err.message });
+  }
+});
+
+router.put("/profile", auth, async (req, res) => {
+  const { name, email, currentPassword, newPassword } = req.body;
+
+  // if updating personal info require both name/email
+  if ((name || email) && (!name || !email)) {
+    return res.status(400).json({ msg: "Name and email are required" });
+  }
+
+  const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
+  if (normalizedEmail && !isValidEmail(normalizedEmail)) {
+    return res.status(400).json({ msg: "Please provide a valid email" });
+  }
+
+  try {
+    const user = await User.findById(res.locals.user?.id);
+    if (!user) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    if (normalizedEmail && normalizedEmail !== user.email) {
+      const existingUser = await User.findOne({ email: normalizedEmail });
+      if (existingUser) {
+        return res.status(409).json({ msg: "Email already in use" });
+      }
+      user.email = normalizedEmail;
+    }
+
+    if (name) {
+      user.name = String(name).trim();
+    }
+
+    if (newPassword) {
+      if (!currentPassword) {
+        return res
+          .status(400)
+          .json({ msg: "Current password is required to make changes" });
+      }
+      const match = await bcrypt.compare(currentPassword, user.password);
+      if (!match) {
+        return res.status(401).json({ msg: "Current password incorrect" });
+      }
+      if (String(newPassword).length < 6) {
+        return res
+          .status(400)
+          .json({ msg: "Password must be at least 6 characters" });
+      }
+      user.password = await bcrypt.hash(newPassword, 10);
+    }
+
+    await user.save();
+
+    return res.json({
+      msg: "Profile updated successfully",
+      user: sanitizeUser(user),
+    });
+  } catch (err) {
+    return res
+      .status(500)
+      .json({ msg: "Failed to update profile", error: err.message });
   }
 });
 

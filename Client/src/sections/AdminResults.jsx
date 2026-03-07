@@ -210,10 +210,10 @@ export default function AdminResults({ selectedExamId: propSelectedExamId }) {
                                                                         mp.warnings.slice(0, 3).map((w, idx) => (
                                                                             <span key={idx} className={`issue-item ${w.type === 'tab_switch' ? 'warning' : w.type === 'page_refresh' ? 'error' : 'info'}`}>
                                                                                 {w.type === 'tab_switch' ? '🔄 Tab switch' :
-                                                                                 w.type === 'page_refresh' ? '🔄 Page refresh' :
-                                                                                 w.type === 'multiple_login' ? '👥 Multiple login' :
-                                                                                 w.type === 'disconnect_timeout' ? '⏰ Timeout' :
-                                                                                 '⚠️ ' + w.type}
+                                                                                    w.type === 'page_refresh' ? '🔄 Page refresh' :
+                                                                                        w.type === 'multiple_login' ? '👥 Multiple login' :
+                                                                                            w.type === 'disconnect_timeout' ? '⏰ Timeout' :
+                                                                                                '⚠️ ' + w.type}
                                                                             </span>
                                                                         ))
                                                                     ) : (
@@ -305,6 +305,46 @@ export default function AdminResults({ selectedExamId: propSelectedExamId }) {
           color: #991b1b;
           font-weight: 500;
           font-size: 0.9rem;
+        }
+        .issues-list {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.3rem;
+          align-items: center;
+        }
+        .issue-item {
+          display: inline-block;
+          padding: 0.2rem 0.4rem;
+          border-radius: 3px;
+          font-size: 0.8rem;
+          font-weight: 500;
+          white-space: nowrap;
+        }
+        .issue-item.warning {
+          background: #fef3c7;
+          color: #92400e;
+        }
+        .issue-item.error {
+          background: #fee2e2;
+          color: #991b1b;
+        }
+        .issue-item.info {
+          background: #dbeafe;
+          color: #1e40af;
+        }
+        .issue-item.critical {
+          background: #7f1d1d;
+          color: #fef2f2;
+          font-weight: 600;
+        }
+        .issue-item.unknown {
+          background: #f3f4f6;
+          color: #6b7280;
+        }
+        .issue-more {
+          font-size: 0.75rem;
+          color: #6b7280;
+          font-style: italic;
         }
       `}</style>
         </section>

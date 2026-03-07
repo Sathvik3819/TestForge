@@ -12,13 +12,17 @@ const examSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
     description: { type: String, default: "" },
+    groupId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Group",
+      required: true,
+    },
     duration: { type: Number, required: true }, // in minutes
     startTime: { type: Date, required: true },
     totalMarks: { type: Number, required: true, min: 1 },
     numberOfQuestions: { type: Number, required: true, min: 1 },
     marksPerQuestion: { type: Number, required: true, min: 0.01 },
     negativeMarking: { type: Number, min: 0, default: 0 },
-    price: { type: Number, default: 0 },
     questions: [questionSchema],
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     published: { type: Boolean, default: false, index: true },
@@ -41,8 +45,12 @@ const examSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-questionSchema.path("options").validate((options) => options.length >= 2, "Minimum 2 options required");
-questionSchema.path("correctAnswer").validate(function validateCorrectAnswer(value) {
+questionSchema
+  .path("options")
+  .validate((options) => options.length >= 2, "Minimum 2 options required");
+questionSchema.path("correctAnswer").validate(function validateCorrectAnswer(
+  value,
+) {
   return (this.options || []).some((option) => option.text === value);
 }, "Correct answer must match one option");
 

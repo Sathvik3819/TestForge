@@ -91,12 +91,28 @@ async function calculateResult(sessionId) {
       wrongAnswers: wrongCount,
       total,
       percentage,
+      rank: null,
       timeTakenSeconds,
       warningsCount: session.warnings.length,
       processedAt: new Date(),
     },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
+
+  const betterScoreCount = await Result.countDocuments({
+    exam: session.exam,
+    $or: [
+      { score: { $gt: score } },
+      {
+        score,
+        timeTakenSeconds: { $lt: timeTakenSeconds },
+      },
+    ],
+    _id: { $ne: result._id },
+  });
+
+  result.rank = betterScoreCount + 1;
+  await result.save();
 
   session.resultProcessed = true;
   session.archivedAt = new Date();

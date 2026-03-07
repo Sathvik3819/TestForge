@@ -14,7 +14,7 @@ export default function Sidebar({ title, items, onClick }) {
 
           return item.onClick ? (
             <button
-              key={item.section}
+              key={item.section || item.label}
               className={className}
               onClick={() => item.onClick()}
               style={{
@@ -23,9 +23,11 @@ export default function Sidebar({ title, items, onClick }) {
                 cursor: 'pointer',
                 textAlign: 'left',
                 width: '100%',
-                padding: 'inherit',
+                padding: '0.55rem 0.65rem',
                 font: 'inherit',
                 color: 'inherit',
+                borderRadius: '10px',
+                fontWeight: '600',
               }}
             >
               {item.label}

@@ -3,6 +3,7 @@ const router = express.Router();
 const Exam = require("../models/Exam");
 const ExamSession = require("../models/ExamSession");
 const Result = require("../models/Result");
+const GroupMember = require("../models/GroupMember");
 const auth = require("../middleware/auth");
 const { requireRole } = require("../middleware/roles");
 const {
@@ -13,6 +14,13 @@ const {
   answersArrayToMap,
 } = require("../services/sessionService");
 const { enqueueResultProcessing } = require("../services/resultQueue");
+const {
+  getExamWindow,
+  syncExamStatus,
+  ensureExamMembership,
+  validateExamAccessForStart,
+  getExamLobbyState,
+} = require("../services/examAccessService");
 const {
   logExamCreated,
   logExamPublished,
@@ -79,43 +87,12 @@ function validateAnswersAgainstExam(exam, answersInput) {
   return validAnswers;
 }
 
-function getExamWindow(exam) {
-  const start = new Date(exam.startTime).getTime();
-  const end = start + Number(exam.duration) * 60 * 1000;
-  return { start, end };
-}
-
-async function syncExamStatus(exam) {
-  const now = Date.now();
-  const { start, end } = getExamWindow(exam);
-
-  let nextStatus = exam.status;
-  if (!exam.published) {
-    nextStatus = "Draft";
-  } else if (now < start) {
-    nextStatus = "Scheduled";
-  } else if (now >= start && now <= end) {
-    nextStatus = "Active";
-  } else if (now > end) {
-    nextStatus =
-      exam.resultsPublished || exam.resultVisibility === "immediate"
-        ? "Completed"
-        : "Ended";
-  }
-
-  if (nextStatus !== exam.status) {
-    exam.status = nextStatus;
-    await exam.save();
-  }
-
-  return exam;
-}
-
 function validateExamCreatePayload(payload) {
   const errors = [];
 
   if (!payload.title) errors.push("Exam title is required");
   if (!payload.description) errors.push("Description is required");
+  if (!payload.groupId) errors.push("Group ID is required");
   if (!payload.startTime) errors.push("Start time is required");
   if (!payload.duration) errors.push("Duration is required");
   if (!payload.totalMarks) errors.push("Total marks is required");
@@ -211,19 +188,90 @@ async function submitSession(exam, session, answers, reason = "manual_submit") {
   return session;
 }
 
+async function ensureAdminGroupAccess(userId, groupId) {
+  const membership = await GroupMember.findOne({
+    userId,
+    groupId,
+    role: "admin",
+  });
+
+  if (!membership) {
+    const err = new Error("You are not an admin of this group");
+    err.statusCode = 403;
+    throw err;
+  }
+
+  return membership;
+}
+
+async function handleAutosave(req, res) {
+  try {
+    const exam = await Exam.findById(req.params.id);
+    if (!exam) return res.status(404).json({ msg: "Exam not found" });
+
+    const session = await ExamSession.findOne({
+      exam: req.params.id,
+      user: res.locals.user.id,
+      submitted: false,
+    });
+    if (!session)
+      return res.status(404).json({ msg: "No active session found" });
+
+    const validAnswers = validateAnswersAgainstExam(exam, req.body.answers);
+    await saveAnswers(session, validAnswers);
+
+    return res.json({ msg: "answers saved", count: validAnswers.length });
+  } catch (err) {
+    return res
+      .status(500)
+      .json({ msg: "Failed to autosave answers", error: err.message });
+  }
+}
+
 // get all exams
 router.get("/", auth, async (req, res) => {
   try {
-    const query = req.user.role === "admin" ? {} : { published: true };
+    let query = {};
+    if (res.locals.user.role === "student") {
+      // Get user's groups
+      const memberships = await GroupMember.find({
+        userId: res.locals.user.id,
+      });
+      const groupIds = memberships.map((m) => m.groupId);
+      query = { groupId: { $in: groupIds }, published: true };
+    } else {
+      // Admin sees all
+      query = {};
+    }
+
     const exams = await Exam.find(query).sort({ createdAt: -1 });
 
     for (const exam of exams) {
       await syncExamStatus(exam);
     }
 
-    res.json(exams);
+    // Categorize exams
+    const now = new Date();
+    const availableExams = [];
+    const upcomingExams = [];
+    const completedExams = [];
+
+    for (const exam of exams) {
+      const start = new Date(exam.startTime);
+      const end = new Date(start.getTime() + exam.duration * 60000);
+
+      if (exam.status === "Completed") {
+        completedExams.push(exam);
+      } else if (start > now) {
+        upcomingExams.push(exam);
+      } else if (start <= now && end > now && exam.status === "Active") {
+        availableExams.push(exam);
+      }
+    }
+
+    res.json({ availableExams, upcomingExams, completedExams });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -259,7 +307,7 @@ router.get("/monitor/live", auth, requireRole("admin"), async (req, res) => {
 // student result dashboard
 router.get("/results/me", auth, async (req, res) => {
   try {
-    const results = await Result.find({ user: req.user.id })
+    const results = await Result.find({ user: res.locals.user.id })
       .populate(
         "exam",
         "title duration startTime resultVisibility resultsPublished",
@@ -268,18 +316,21 @@ router.get("/results/me", auth, async (req, res) => {
       .sort({ createdAt: -1 });
 
     const visibleResults = results.filter((result) => {
-      if (!result.exam) return false;
+      const exam = result.exam || {};
+
+      if (!exam) return false;
+
       return (
-        result.exam.resultVisibility === "immediate" ||
-        result.exam.resultsPublished
+        exam.resultVisibility === "immediate" || exam.resultsPublished === true
       );
     });
 
     return res.json(visibleResults);
   } catch (err) {
-    return res
-      .status(500)
-      .json({ msg: "Failed to load results", error: err.message });
+    return res.status(500).json({
+      msg: "Failed to load results",
+      error: err.message,
+    });
   }
 });
 
@@ -314,6 +365,26 @@ router.get(
               avgTimeTaken: { $avg: "$timeTakenSeconds" },
             },
           },
+          {
+            $lookup: {
+              from: "exams",
+              localField: "_id",
+              foreignField: "_id",
+              as: "exam",
+            },
+          },
+          {
+            $unwind: "$exam",
+          },
+          {
+            $project: {
+              _id: 1,
+              title: "$exam.title",
+              averageScore: 1,
+              attempts: 1,
+              avgTimeTaken: 1,
+            },
+          },
         ]),
       ]);
 
@@ -339,28 +410,53 @@ router.get("/:id", auth, async (req, res) => {
     if (!exam) return res.status(404).json({ msg: "Exam not found" });
     await syncExamStatus(exam);
 
-    if (!exam.published && req.user.role !== "admin") {
+    if (res.locals.user.role !== "admin") {
+      await ensureExamMembership({
+        userId: res.locals.user.id,
+        groupId: exam.groupId,
+      });
+    }
+
+    if (!exam.published && res.locals.user.role !== "admin") {
       return res.status(403).json({ msg: "Exam is not published yet" });
     }
 
     res.json(exam);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
+  }
+});
+
+router.get("/:id/lobby", auth, async (req, res) => {
+  try {
+    const exam = await Exam.findById(req.params.id);
+    if (!exam) return res.status(404).json({ msg: "Exam not found" });
+
+    const lobby = await getExamLobbyState({
+      exam,
+      userId: res.locals.user.id,
+    });
+
+    return res.json(lobby);
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({
+      msg: err.message || "Failed to load exam lobby",
+    });
   }
 });
 
 // create exam (admin)
-router.post("/", auth, requireRole("admin"), async (req, res) => {
+router.post("/create", auth, requireRole("admin"), async (req, res) => {
   const {
     title,
     description,
+    groupId,
     duration,
     startTime,
     totalMarks,
     numberOfQuestions,
     marksPerQuestion,
     negativeMarking,
-    price,
     resultVisibility,
     maxAttempts,
     allowRetake,
@@ -370,6 +466,7 @@ router.post("/", auth, requireRole("admin"), async (req, res) => {
     const validationErrors = validateExamCreatePayload({
       title,
       description,
+      groupId,
       duration,
       startTime,
       totalMarks,
@@ -381,28 +478,31 @@ router.post("/", auth, requireRole("admin"), async (req, res) => {
         .json({ msg: validationErrors[0], errors: validationErrors });
     }
 
+    // Check if admin is member of the group
+    await ensureAdminGroupAccess(res.locals.user.id, groupId);
+
     const exam = new Exam({
       title,
       description,
+      groupId,
       duration: Number(duration),
       startTime,
       totalMarks: Number(totalMarks),
       numberOfQuestions: Number(numberOfQuestions),
       marksPerQuestion: Number(marksPerQuestion || 1),
       negativeMarking: Number(negativeMarking || 0),
-      price: Number(price || 0),
       resultVisibility:
         resultVisibility === "delayed" ? "delayed" : "immediate",
       maxAttempts: Number(maxAttempts || 1),
       allowRetake: Boolean(allowRetake),
-      createdBy: req.user.id,
+      createdBy: res.locals.user.id,
       published: false,
       status: "Draft",
     });
     await exam.save();
 
     // Log exam creation
-    logExamCreated(exam._id.toString(), req.user.id, {
+    logExamCreated(exam._id.toString(), res.locals.user.id, {
       title,
       duration,
       totalMarks,
@@ -420,6 +520,7 @@ router.patch("/:id/publish", auth, requireRole("admin"), async (req, res) => {
   try {
     const exam = await Exam.findById(req.params.id);
     if (!exam) return res.status(404).json({ msg: "Exam not found" });
+    await ensureAdminGroupAccess(res.locals.user.id, exam.groupId);
 
     if ((exam.questions || []).length < 1) {
       return res
@@ -433,12 +534,16 @@ router.patch("/:id/publish", auth, requireRole("admin"), async (req, res) => {
     await syncExamStatus(exam);
 
     // Log exam published
-    logExamPublished(exam._id.toString(), req.user.id, exam.questions.length);
+    logExamPublished(
+      exam._id.toString(),
+      res.locals.user.id,
+      exam.questions.length,
+    );
 
     return res.json({ msg: "Exam published", exam });
   } catch (err) {
     return res
-      .status(500)
+      .status(err.statusCode || 500)
       .json({ msg: "Failed to publish exam", error: err.message });
   }
 });
@@ -447,9 +552,15 @@ router.patch("/:id/publish", auth, requireRole("admin"), async (req, res) => {
 router.patch("/:id", auth, requireRole("admin"), async (req, res) => {
   try {
     const exam = await Exam.findById(req.params.id);
-    if (!exam) return res.status(404).json({ msg: "Exam not found" });
+
+    if (!exam) {
+      return res.status(404).json({ msg: "Exam not found" });
+    }
+
+    await ensureAdminGroupAccess(res.locals.user.id, exam.groupId);
 
     const updates = {};
+
     const allowedFields = [
       "title",
       "description",
@@ -458,12 +569,12 @@ router.patch("/:id", auth, requireRole("admin"), async (req, res) => {
       "totalMarks",
       "marksPerQuestion",
       "negativeMarking",
-      "price",
       "resultVisibility",
       "maxAttempts",
       "allowRetake",
     ];
 
+    // build safe update object
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) {
         updates[field] = req.body[field];
@@ -474,22 +585,18 @@ router.patch("/:id", auth, requireRole("admin"), async (req, res) => {
       return res.status(400).json({ msg: "No valid fields to update" });
     }
 
-    const updatedExam = await Exam.findByIdAndUpdate(req.params.id, updates, {
-      new: true,
-    });
-
-    logExamCreated(
-      updatedExam._id.toString(),
-      req.user.id,
-      updatedExam.title,
-      "updated",
+    const updatedExam = await Exam.findByIdAndUpdate(
+      req.params.id,
+      { $set: updates },
+      { new: true, runValidators: true },
     );
 
     return res.json(updatedExam);
   } catch (err) {
-    return res
-      .status(500)
-      .json({ msg: "Failed to update exam", error: err.message });
+    return res.status(err.statusCode || 500).json({
+      msg: "Failed to update exam",
+      error: err.message,
+    });
   }
 });
 
@@ -502,6 +609,7 @@ router.patch(
     try {
       const exam = await Exam.findById(req.params.id);
       if (!exam) return res.status(404).json({ msg: "Exam not found" });
+      await ensureAdminGroupAccess(res.locals.user.id, exam.groupId);
 
       exam.resultsPublished = true;
       await syncExamStatus(exam);
@@ -509,7 +617,7 @@ router.patch(
       return res.json({ msg: "Results published", examId: exam._id });
     } catch (err) {
       return res
-        .status(500)
+        .status(err.statusCode || 500)
         .json({ msg: "Failed to publish results", error: err.message });
     }
   },
@@ -521,6 +629,7 @@ router.post("/:id/questions", auth, requireRole("admin"), async (req, res) => {
     const exam = await Exam.findById(req.params.id);
     if (!exam) return res.status(404).json({ msg: "Exam not found" });
     await syncExamStatus(exam);
+    await ensureAdminGroupAccess(res.locals.user.id, exam.groupId);
 
     if (["Active", "Ended", "Completed"].includes(exam.status)) {
       return res
@@ -550,7 +659,7 @@ router.post("/:id/questions", auth, requireRole("admin"), async (req, res) => {
     await exam.save();
     res.json(exam);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.statusCode || 500).json({ error: err.message });
   }
 });
 
@@ -559,52 +668,31 @@ router.post("/:id/start", auth, async (req, res) => {
   try {
     const exam = await Exam.findById(req.params.id);
     if (!exam) return res.status(404).json({ msg: "Exam not found" });
-    await syncExamStatus(exam);
 
-    const now = Date.now();
-    const { start, end } = getExamWindow(exam);
-
-    if (exam.status !== "Active") {
-      return res.status(403).json({ msg: "Exam is not active" });
-    }
-
-    if (now < start || now > end) {
-      return res
-        .status(403)
-        .json({ msg: "Exam can only be started within scheduled window" });
-    }
-
-    const submittedAttempts = await ExamSession.countDocuments({
-      exam: exam._id,
-      user: req.user.id,
-      submitted: true,
+    const access = await validateExamAccessForStart({
+      exam,
+      userId: res.locals.user.id,
     });
 
-    if (!exam.allowRetake && submittedAttempts >= 1) {
+    if (access.activeSession) {
       return res
         .status(409)
-        .json({ msg: "Student can attempt exam only once" });
-    }
-
-    if (submittedAttempts >= exam.maxAttempts) {
-      return res
-        .status(409)
-        .json({ msg: `Maximum attempts (${exam.maxAttempts}) reached` });
+        .json({ msg: "An active session already exists for this exam" });
     }
 
     const ownerId =
-      req.body.clientId || req.header("x-client-id") || req.user.id;
+      req.body.clientId || req.header("x-client-id") || res.locals.user.id;
     const { session, timeLeftMs, resumeAnswers, multipleLogin } =
       await startOrResumeSession({
         exam,
-        userId: req.user.id,
+        userId: res.locals.user.id,
         ownerId,
       });
 
     if (multipleLogin) {
       await invalidateOtherActiveSessions({
         examId: exam._id,
-        userId: req.user.id,
+        userId: res.locals.user.id,
         keepSessionId: session._id,
       });
       await appendWarning(
@@ -616,7 +704,7 @@ router.post("/:id/start", auth, async (req, res) => {
       // Log multiple login
       logMultipleLogin(
         exam._id.toString(),
-        req.user.id,
+        res.locals.user.id,
         undefined,
         session._id.toString(),
       );
@@ -629,7 +717,11 @@ router.post("/:id/start", auth, async (req, res) => {
     const fresh = await ExamSession.findById(session._id);
 
     // Log exam started
-    logExamStarted(fresh._id.toString(), exam._id.toString(), req.user.id);
+    logExamStarted(
+      fresh._id.toString(),
+      exam._id.toString(),
+      res.locals.user.id,
+    );
 
     return res.json({
       sessionId: fresh._id,
@@ -645,7 +737,7 @@ router.post("/:id/start", auth, async (req, res) => {
     });
   } catch (err) {
     return res
-      .status(500)
+      .status(err.statusCode || 500)
       .json({ msg: "Failed to start exam", error: err.message });
   }
 });
@@ -655,7 +747,7 @@ router.get("/:id/session", auth, async (req, res) => {
   try {
     const session = await ExamSession.findOne({
       exam: req.params.id,
-      user: req.user.id,
+      user: res.locals.user.id,
     }).sort({ createdAt: -1 });
     if (!session) return res.status(404).json({ msg: "No session found" });
 
@@ -680,29 +772,8 @@ router.get("/:id/session", auth, async (req, res) => {
 });
 
 // auto-save answers
-router.post("/:id/answers", auth, async (req, res) => {
-  try {
-    const exam = await Exam.findById(req.params.id);
-    if (!exam) return res.status(404).json({ msg: "Exam not found" });
-
-    const session = await ExamSession.findOne({
-      exam: req.params.id,
-      user: req.user.id,
-      submitted: false,
-    });
-    if (!session)
-      return res.status(404).json({ msg: "No active session found" });
-
-    const validAnswers = validateAnswersAgainstExam(exam, req.body.answers);
-    await saveAnswers(session, validAnswers);
-
-    return res.json({ msg: "answers saved", count: validAnswers.length });
-  } catch (err) {
-    return res
-      .status(500)
-      .json({ msg: "Failed to autosave answers", error: err.message });
-  }
-});
+router.post("/:id/answers", auth, handleAutosave);
+router.post("/:id/save", auth, handleAutosave);
 
 // anti-cheat warning endpoint
 router.post("/:id/warnings", auth, async (req, res) => {
@@ -710,7 +781,7 @@ router.post("/:id/warnings", auth, async (req, res) => {
     const { type, message } = req.body;
     const session = await ExamSession.findOne({
       exam: req.params.id,
-      user: req.user.id,
+      user: res.locals.user.id,
       submitted: false,
     });
     if (!session)
@@ -726,7 +797,7 @@ router.post("/:id/warnings", auth, async (req, res) => {
     logStudentWarning(
       session._id.toString(),
       req.params.id,
-      req.user.id,
+      res.locals.user.id,
       type || "warning",
     );
 
@@ -738,7 +809,7 @@ router.post("/:id/warnings", auth, async (req, res) => {
       logFlaggedAttempt(
         session._id.toString(),
         req.params.id,
-        req.user.id,
+        res.locals.user.id,
         session.warningsCount,
       );
 
@@ -777,7 +848,7 @@ router.post("/:id/submit", auth, async (req, res) => {
 
     let session = await ExamSession.findOne({
       exam: req.params.id,
-      user: req.user.id,
+      user: res.locals.user.id,
       submitted: false,
     });
     if (!session) {
@@ -794,7 +865,7 @@ router.post("/:id/submit", auth, async (req, res) => {
     logExamSubmitted(
       session._id.toString(),
       exam._id.toString(),
-      req.user.id,
+      res.locals.user.id,
       reason,
       session.warningsCount,
     );
@@ -869,7 +940,7 @@ router.get("/:id/results", auth, async (req, res) => {
     if (!exam) return res.status(404).json({ msg: "Exam not found" });
 
     // Check visibility for non-admin users
-    if (req.user.role !== "admin") {
+    if (res.locals.user.role !== "admin") {
       if (!exam.published) {
         return res.status(403).json({ msg: "Exam not available" });
       }
@@ -878,7 +949,7 @@ router.get("/:id/results", auth, async (req, res) => {
     // Get result for current user
     const result = await Result.findOne({
       exam: req.params.id,
-      user: req.user.id,
+      user: res.locals.user.id,
     }).populate("session");
 
     if (!result) {
@@ -886,10 +957,11 @@ router.get("/:id/results", auth, async (req, res) => {
     }
 
     // Check if results are visible
-    if (req.user.role !== "admin") {
+    if (res.locals.user.role !== "admin") {
+      const examData = typeof result.exam === "object" ? result.exam : exam;
       if (
-        result.exam.resultVisibility === "delayed" &&
-        !result.exam.resultsPublished
+        examData.resultVisibility === "delayed" &&
+        !examData.resultsPublished
       ) {
         return res.status(403).json({ msg: "Results are not yet published" });
       }

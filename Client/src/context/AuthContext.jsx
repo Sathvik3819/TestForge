@@ -18,7 +18,21 @@ export function AuthProvider({ children }) {
                     parsedUser = {};
                 }
             }
-            setUser({ token, ...parsedUser });
+            // if we don't have createdAt or other fresh info, fetch from server
+            if (!parsedUser.createdAt) {
+                API.get('/auth/me')
+                    .then((res) => {
+                        const fresh = { token, ...res.data };
+                        setUser(fresh);
+                        localStorage.setItem('user', JSON.stringify(res.data));
+                    })
+                    .catch(() => {
+                        // ignore, maybe token expired
+                        setUser({ token, ...parsedUser });
+                    });
+            } else {
+                setUser({ token, ...parsedUser });
+            }
         }
     }, []);
 
@@ -43,7 +57,7 @@ export function AuthProvider({ children }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, login, signup, logout }}>
+        <AuthContext.Provider value={{ user, setUser, login, signup, logout }}>
             {children}
         </AuthContext.Provider>
     );

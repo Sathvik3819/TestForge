@@ -27,9 +27,11 @@ const io = new Server(server, {
 // mount routes
 const authRouter = require("./routes/auth");
 const examRouter = require("./routes/exam");
+const groupsRouter = require("./routes/groups");
 
 app.use("/api/auth", authRouter);
 app.use("/api/exams", examRouter);
+app.use("/api/groups", groupsRouter);
 
 app.get("/", (req, res) => {
   res.send("TestForge backend is running");
@@ -39,7 +41,9 @@ registerSocketHandlers(io);
 
 async function start() {
   try {
-    await mongoose.connect(process.env.MONGO_URI || "mongodb://localhost/testforge");
+    await mongoose.connect(
+      process.env.MONGO_URI || "mongodb://localhost/testforge",
+    );
     console.log("mongodb connected");
     try {
       await ensureRedisConnection();
@@ -47,7 +51,10 @@ async function start() {
       startResultWorker();
       console.log("result worker started");
     } catch (redisErr) {
-      console.warn("redis unavailable, continuing without redis-backed features:", redisErr.message);
+      console.warn(
+        "redis unavailable, continuing without redis-backed features:",
+        redisErr.message,
+      );
     }
 
     const port = process.env.PORT || 4000;

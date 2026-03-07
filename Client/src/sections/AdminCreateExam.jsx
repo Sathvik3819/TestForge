@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import API from '../api';
 
 function createQuestion() {
@@ -14,13 +14,30 @@ function createQuestion() {
     };
 }
 
+function mapExamQuestion(question) {
+    return {
+        text: question.text || '',
+        optionA: question.options?.[0]?.text || '',
+        optionB: question.options?.[1]?.text || '',
+        optionC: question.options?.[2]?.text || '',
+        optionD: question.options?.[3]?.text || '',
+        correctAnswer:
+            question.correctAnswer === question.options?.[0]?.text ? 'A'
+                : question.correctAnswer === question.options?.[1]?.text ? 'B'
+                    : question.correctAnswer === question.options?.[2]?.text ? 'C'
+                        : 'D',
+        marks: question.marks || 1,
+        negativeMarks: question.negativeMarks || 0,
+    };
+}
+
 export default function AdminCreateExam({ onExamCreated, editExamId }) {
     const [form, setForm] = useState({
         title: '',
         description: '',
+        groupId: '',
         duration: 60,
         startTime: '',
-        price: '',
         marksPerQuestion: 1,
         negativeMarking: 0,
         resultVisibility: 'immediate',
@@ -31,36 +48,51 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
     const [questions, setQuestions] = useState([createQuestion()]);
     const [status, setStatus] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [groups, setGroups] = useState([]);
 
     useEffect(() => {
-        if (editExamId) {
-            const loadExam = async () => {
-                try {
-                    setIsLoading(true);
-                    const res = await API.get(`/exams/${editExamId}`);
-                    const exam = res.data;
-                    setForm({
-                        title: exam.title || '',
-                        description: exam.description || '',
-                        duration: exam.duration || 60,
-                        startTime: exam.startTime ? new Date(exam.startTime).toISOString().slice(0, 16) : '',
-                        price: exam.price || '',
-                        marksPerQuestion: exam.marksPerQuestion || 1,
-                        negativeMarking: exam.negativeMarking || 0,
-                        resultVisibility: exam.resultVisibility || 'immediate',
-                        maxAttempts: exam.maxAttempts || 1,
-                        allowRetake: exam.allowRetake || false,
-                        publishImmediately: false, // Don't publish on edit
-                    });
-                    setQuestions(exam.questions || [createQuestion()]);
-                } catch (err) {
-                    setStatus('Failed to load exam for editing');
-                } finally {
-                    setIsLoading(false);
-                }
-            };
-            loadExam();
-        }
+        const loadGroups = async () => {
+            try {
+                const res = await API.get('/groups/my');
+                setGroups((res.data || []).filter((group) => group.membershipRole === 'admin'));
+            } catch (err) {
+                console.error(err);
+            }
+        };
+        loadGroups();
+    }, []);
+
+    useEffect(() => {
+        if (!editExamId) return;
+
+        const loadExam = async () => {
+            try {
+                setIsLoading(true);
+                const res = await API.get(`/exams/${editExamId}`);
+                const exam = res.data;
+                setForm({
+                    title: exam.title || '',
+                    description: exam.description || '',
+                    groupId: typeof exam.groupId === 'string' ? exam.groupId : exam.groupId?._id || '',
+                    duration: exam.duration || 60,
+                    startTime: exam.startTime ? new Date(exam.startTime).toISOString().slice(0, 16) : '',
+                    marksPerQuestion: exam.marksPerQuestion || 1,
+                    negativeMarking: exam.negativeMarking || 0,
+                    resultVisibility: exam.resultVisibility || 'immediate',
+                    maxAttempts: exam.maxAttempts || 1,
+                    allowRetake: exam.allowRetake || false,
+                    publishImmediately: false,
+                });
+                const mappedQuestions = (exam.questions || []).map(mapExamQuestion);
+                setQuestions(mappedQuestions.length ? mappedQuestions : [createQuestion()]);
+            } catch (err) {
+                setStatus('Failed to load exam for editing');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        loadExam();
     }, [editExamId]);
 
     const updateQuestion = (idx, key, value) => {
@@ -75,8 +107,25 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
 
     const removeQuestion = (idx) => {
         if (questions.length > 1) {
-            setQuestions((prev) => prev.filter((_, i) => i !== idx));
+            setQuestions((prev) => prev.filter((_, index) => index !== idx));
         }
+    };
+
+    const resetForm = () => {
+        setForm({
+            title: '',
+            description: '',
+            groupId: '',
+            duration: 60,
+            startTime: '',
+            marksPerQuestion: 1,
+            negativeMarking: 0,
+            resultVisibility: 'immediate',
+            maxAttempts: 1,
+            allowRetake: false,
+            publishImmediately: true,
+        });
+        setQuestions([createQuestion()]);
     };
 
     const handleSave = async (e) => {
@@ -85,10 +134,8 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
         setIsLoading(true);
 
         try {
-            let examRes;
             if (editExamId) {
-                // Update existing exam
-                examRes = await API.patch(`/exams/${editExamId}`, {
+                await API.patch(`/exams/${editExamId}`, {
                     title: form.title,
                     description: form.description,
                     duration: Number(form.duration),
@@ -96,23 +143,21 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
                     totalMarks: Number(form.marksPerQuestion) * questions.length,
                     marksPerQuestion: Number(form.marksPerQuestion),
                     negativeMarking: Number(form.negativeMarking || 0),
-                    price: form.price ? Number(form.price) : 0,
                     resultVisibility: form.resultVisibility,
                     maxAttempts: Number(form.maxAttempts || 1),
                     allowRetake: Boolean(form.allowRetake),
                 });
             } else {
-                // Create new exam
-                examRes = await API.post('/exams', {
+                const examRes = await API.post('/exams/create', {
                     title: form.title,
                     description: form.description,
+                    groupId: form.groupId,
                     duration: Number(form.duration),
                     startTime: form.startTime,
                     totalMarks: Number(form.marksPerQuestion) * questions.length,
                     numberOfQuestions: questions.length,
                     marksPerQuestion: Number(form.marksPerQuestion),
                     negativeMarking: Number(form.negativeMarking || 0),
-                    price: form.price ? Number(form.price) : 0,
                     resultVisibility: form.resultVisibility,
                     maxAttempts: Number(form.maxAttempts || 1),
                     allowRetake: Boolean(form.allowRetake),
@@ -120,13 +165,23 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
 
                 const examId = examRes.data._id;
                 await Promise.all(
-                    questions.map((q) =>
+                    questions.map((question) =>
                         API.post(`/exams/${examId}/questions`, {
-                            text: q.text,
-                            options: [q.optionA, q.optionB, q.optionC, q.optionD],
-                            correctAnswer: { A: q.optionA, B: q.optionB, C: q.optionC, D: q.optionD }[q.correctAnswer],
-                            marks: Number(q.marks || 1),
-                            negativeMarks: Number(q.negativeMarks || 0),
+                            text: question.text,
+                            options: [
+                                question.optionA,
+                                question.optionB,
+                                question.optionC,
+                                question.optionD,
+                            ],
+                            correctAnswer: {
+                                A: question.optionA,
+                                B: question.optionB,
+                                C: question.optionC,
+                                D: question.optionD,
+                            }[question.correctAnswer],
+                            marks: Number(question.marks || 1),
+                            negativeMarks: Number(question.negativeMarks || 0),
                         }),
                     ),
                 );
@@ -136,29 +191,16 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
                 }
             }
 
-            setStatus(editExamId ? '✓ Exam updated successfully!' : '✓ Exam saved successfully!');
+            setStatus(editExamId ? 'Exam updated successfully.' : 'Exam saved successfully.');
             if (!editExamId) {
-                setForm({
-                    title: '',
-                    description: '',
-                    duration: 60,
-                    startTime: '',
-                    price: '',
-                    marksPerQuestion: 1,
-                    negativeMarking: 0,
-                    resultVisibility: 'immediate',
-                    maxAttempts: 1,
-                    allowRetake: false,
-                    publishImmediately: true,
-                });
-                setQuestions([createQuestion()]);
+                resetForm();
             }
 
             if (onExamCreated) {
                 setTimeout(onExamCreated, 1000);
             }
         } catch (err) {
-            setStatus(`✕ ${err.response?.data?.msg || 'Failed to save exam'}`);
+            setStatus(err.response?.data?.msg || err.response?.data?.error || 'Failed to save exam');
         } finally {
             setIsLoading(false);
         }
@@ -170,6 +212,22 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
             <form className='card create-exam-form' onSubmit={handleSave}>
                 <h3>Exam Information</h3>
                 <div className='grid two-col'>
+                    <div>
+                        <label>Group *</label>
+                        <select
+                            required
+                            value={form.groupId}
+                            onChange={(e) => setForm((prev) => ({ ...prev, groupId: e.target.value }))}
+                            disabled={Boolean(editExamId)}
+                        >
+                            <option value=''>Select group</option>
+                            {groups.map((group) => (
+                                <option key={group._id} value={group._id}>
+                                    {group.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
                     <div>
                         <label>Exam Title *</label>
                         <input
@@ -196,16 +254,6 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
                             required
                             value={form.startTime}
                             onChange={(e) => setForm((prev) => ({ ...prev, startTime: e.target.value }))}
-                        />
-                    </div>
-                    <div>
-                        <label>Price (optional)</label>
-                        <input
-                            type='number'
-                            min='0'
-                            placeholder='0'
-                            value={form.price}
-                            onChange={(e) => setForm((prev) => ({ ...prev, price: e.target.value }))}
                         />
                     </div>
                     <div>
@@ -259,6 +307,12 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
                         rows='3'
                     />
                 </div>
+
+                {!editExamId && groups.length === 0 && (
+                    <p className='muted'>
+                        Create a group first from the Groups page before creating an exam.
+                    </p>
+                )}
 
                 <div className='split'>
                     <label style={{ margin: 0 }}>Publish immediately after save</label>
@@ -383,7 +437,7 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
                 </div>
 
                 {status && (
-                    <div className={`status-message ${status.startsWith('✓') ? 'success' : 'error'}`}>
+                    <div className={`status-message ${status.toLowerCase().includes('successfully') ? 'success' : 'error'}`}>
                         {status}
                     </div>
                 )}

@@ -6,11 +6,14 @@ import AdminCreateExam from '../sections/AdminCreateExam';
 import AdminManageExams from '../sections/AdminManageExams';
 import AdminMonitoring from '../sections/AdminMonitoring';
 import AdminResults from '../sections/AdminResults';
+import AdminGroups from '../sections/AdminGroups';
+import { createAuthedSocket } from '../socket';
 
 const adminSidebarItems = [
     { label: 'Dashboard', section: 'dashboard' },
     { label: 'Create Exam', section: 'create' },
     { label: 'Manage Exams', section: 'manage' },
+    { label: 'Groups', section: 'groups' },
     { label: 'Live Monitoring', section: 'monitoring' },
     { label: 'Results', section: 'results' },
     { label: 'Candidates', section: 'candidates' },
@@ -23,17 +26,23 @@ export default function AdminPanel() {
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     const [selectedResultsExamId, setSelectedResultsExamId] = useState('');
     const [editExamId, setEditExamId] = useState(null);
+    const [resultSummary, setResultSummary] = useState(null);
+    const [groups, setGroups] = useState([]);
 
     // Fetch data for dashboard
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [examRes, monitorRes] = await Promise.all([
+                const [examRes, monitorRes, summaryRes, groupsRes] = await Promise.all([
                     API.get('/exams'),
                     API.get('/exams/monitor/live'),
+                    API.get('/exams/results/admin/summary'),
+                    API.get('/groups/my'),
                 ]);
-                setExams(examRes.data || []);
+                setExams(Array.isArray(examRes.data) ? examRes.data : []);
                 setMonitorRows(monitorRes.data || []);
+                setResultSummary(summaryRes.data || null);
+                setGroups((groupsRes.data || []).filter((group) => group.membershipRole === 'admin'));
             } catch (err) {
                 console.error(err);
             }
@@ -43,23 +52,82 @@ export default function AdminPanel() {
         return () => clearInterval(interval);
     }, [refreshTrigger]);
 
+    useEffect(() => {
+        if (!exams.length) return undefined;
+
+        const socket = createAuthedSocket();
+        const examIds = exams.map((exam) => exam._id).filter(Boolean);
+
+        socket.on('connect', () => {
+            examIds.forEach((examId) => {
+                socket.emit('admin:join-monitor', { examId });
+            });
+        });
+
+        socket.on('admin:monitor:update', ({ examId, sessions }) => {
+            setMonitorRows((prev) => {
+                const filtered = prev.filter((row) => row.exam?._id !== examId && row.exam !== examId);
+                return [...filtered, ...(sessions || []).map((session) => ({
+                    ...session,
+                    exam: typeof session.exam === 'object' ? session.exam : { _id: examId },
+                }))];
+            });
+        });
+
+        return () => {
+            socket.disconnect();
+        };
+    }, [exams]);
+
     const dashboardStats = useMemo(() => {
         const ongoing = monitorRows.filter((item) => !item.submitted).length;
+        const submitted = monitorRows.filter((item) => item.submitted).length;
         return {
             totalExams: exams.length,
             activeCandidates: monitorRows.length,
             ongoingExams: ongoing,
-            totalRevenue: exams.length * 499,
+            submittedSessions: submitted,
         };
     }, [exams, monitorRows]);
 
+    const chartData = useMemo(() => {
+        // Exam participation by day
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const participationByDay = exams.reduce((acc, exam) => {
+            const day = new Date(exam.startTime).getDay();
+            acc[day] = (acc[day] || 0) + 1;
+            return acc;
+        }, {});
+
+        const participationData = dayNames.map((label, index) => ({
+            label,
+            value: participationByDay[index] || 0,
+        }));
+
+        // Average score by exam
+        const scoreData = (resultSummary?.examStats || []).slice(0, 6).map(stat => ({
+            label: stat.title || 'Unknown Exam',
+            value: Math.round(stat.averageScore || 0),
+        }));
+
+        return {
+            participation: participationData,
+            scores: scoreData,
+        };
+    }, [exams, resultSummary]);
+
     const handleSectionChange = (section) => {
         setActiveSection(section);
+        // Reset edit mode when switching away from create
+        if (section !== 'create') {
+            setEditExamId(null);
+        }
     };
 
     const handleExamCreated = () => {
         setRefreshTrigger((prev) => prev + 1);
         setActiveSection('manage');
+        setEditExamId(null); // Reset edit mode
     };
 
     const handleViewResults = (examId) => {
@@ -92,30 +160,19 @@ export default function AdminPanel() {
                                 <strong>{dashboardStats.ongoingExams}</strong>
                             </div>
                             <div className='card stat-card'>
-                                <p>Total Revenue</p>
-                                <strong>INR {dashboardStats.totalRevenue}</strong>
+                                <p>Submitted Sessions</p>
+                                <strong>{dashboardStats.submittedSessions}</strong>
                             </div>
                         </div>
 
                         <div className='grid mt-2'>
                             <ResultChart
                                 title='Exam Participation'
-                                data={[
-                                    { label: 'Mon', value: 22 },
-                                    { label: 'Tue', value: 18 },
-                                    { label: 'Wed', value: 30 },
-                                    { label: 'Thu', value: 26 },
-                                    { label: 'Fri', value: 34 },
-                                ]}
+                                data={chartData.participation}
                             />
                             <ResultChart
-                                title='Average Score'
-                                data={[
-                                    { label: 'DBMS', value: 76 },
-                                    { label: 'OS', value: 69 },
-                                    { label: 'CN', value: 81 },
-                                    { label: 'DSA', value: 73 },
-                                ]}
+                                title='Average Score by Exam'
+                                data={chartData.scores}
                             />
                         </div>
                     </section>
@@ -133,6 +190,9 @@ export default function AdminPanel() {
                         onEditExam={handleEditExam}
                     />
                 );
+
+            case 'groups':
+                return <AdminGroups groups={groups} onRefresh={() => setRefreshTrigger((prev) => prev + 1)} />;
 
             case 'monitoring':
                 return <AdminMonitoring rows={monitorRows} />;
@@ -190,6 +250,7 @@ export default function AdminPanel() {
     // Convert sidebar items to include onClick handlers
     const sidebarItemsWithHandlers = adminSidebarItems.map((item) => ({
         ...item,
+        label: item.section === 'create' && editExamId ? 'Edit Exam' : item.label,
         onClick: () => handleSectionChange(item.section),
         active: item.section === activeSection,
     }));

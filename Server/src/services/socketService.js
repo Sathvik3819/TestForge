@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
 const Exam = require("../models/Exam");
 const ExamSession = require("../models/ExamSession");
+const GroupMember = require("../models/GroupMember");
 const {
   startOrResumeSession,
   saveAnswers,
@@ -9,6 +10,11 @@ const {
   markDisconnected,
 } = require("./sessionService");
 const { enqueueResultProcessing } = require("./resultQueue");
+const {
+  ensureExamMembership,
+  syncExamStatus,
+  getExamWindow,
+} = require("./examAccessService");
 
 const disconnectTimers = new Map();
 
@@ -49,30 +55,15 @@ function validateAnswersAgainstExam(exam, answersInput) {
   return validAnswers;
 }
 
-function getExamStatus(exam) {
-  if (!exam.published) return "Draft";
-
-  const now = Date.now();
-  const start = new Date(exam.startTime).getTime();
-  const end = start + Number(exam.duration) * 60 * 1000;
-
-  if (now < start) return "Scheduled";
-  if (now > end)
-    return exam.resultsPublished || exam.resultVisibility === "immediate"
-      ? "Completed"
-      : "Ended";
-  return "Active";
-}
-
 async function getMonitorSnapshot(examId) {
-  const sessions = await ExamSession.find({ exam: examId }).populate(
-    "user",
-    "name email role",
-  );
+  const sessions = await ExamSession.find({ exam: examId })
+    .populate("user", "name email role")
+    .populate("exam", "title duration startTime status");
   const now = Date.now();
   return sessions.map((session) => ({
     sessionId: session._id,
     user: session.user,
+    exam: session.exam,
     status: session.status,
     submitted: session.submitted,
     endedReason: session.endedReason,
@@ -200,8 +191,22 @@ function registerSocketHandlers(io) {
           return;
         }
 
-        if (getExamStatus(exam) !== "Active") {
+        await syncExamStatus(exam);
+        await ensureExamMembership({
+          userId: socket.user.id,
+          groupId: exam.groupId,
+        });
+
+        const { start, end } = getExamWindow(exam);
+        const now = Date.now();
+        if (exam.status !== "Active") {
           socket.emit("exam:error", { msg: "Exam is not active" });
+          return;
+        }
+        if (now < start || now > end) {
+          socket.emit("exam:error", {
+            msg: "Exam can only be joined within scheduled window",
+          });
           return;
         }
 
@@ -416,6 +421,24 @@ function registerSocketHandlers(io) {
       try {
         if (socket.user.role !== "admin") {
           socket.emit("exam:error", { msg: "Forbidden: admin only" });
+          return;
+        }
+
+        const exam = await Exam.findById(examId);
+        if (!exam) {
+          socket.emit("exam:error", { msg: "Exam not found" });
+          return;
+        }
+
+        const membership = await GroupMember.findOne({
+          userId: socket.user.id,
+          groupId: exam.groupId,
+          role: "admin",
+        });
+        if (!membership) {
+          socket.emit("exam:error", {
+            msg: "Forbidden: not an admin member of this exam group",
+          });
           return;
         }
 

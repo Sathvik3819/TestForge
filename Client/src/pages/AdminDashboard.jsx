@@ -10,7 +10,6 @@ const adminSidebar = [
   { label: 'Candidates', to: '/monitoring' },
   { label: 'Monitoring', to: '/monitoring' },
   { label: 'Results', to: '/results' },
-  { label: 'Payments', to: '/results' },
 ];
 
 export default function AdminDashboard() {
@@ -35,11 +34,12 @@ export default function AdminDashboard() {
 
   const cards = useMemo(() => {
     const ongoing = monitorRows.filter((item) => !item.submitted).length;
+    const submitted = monitorRows.filter((item) => item.submitted).length;
     return {
       totalExams: exams.length,
       activeCandidates: monitorRows.length,
       ongoingExams: ongoing,
-      totalRevenue: exams.length * 499,
+      submittedSessions: submitted,
     };
   }, [exams, monitorRows]);
 
@@ -62,8 +62,8 @@ export default function AdminDashboard() {
             <strong>{cards.ongoingExams}</strong>
           </div>
           <div className='card stat-card'>
-            <p>Total Revenue</p>
-            <strong>INR {cards.totalRevenue}</strong>
+            <p>Submitted Sessions</p>
+            <strong>{cards.submittedSessions}</strong>
           </div>
         </div>
 

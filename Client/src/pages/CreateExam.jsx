@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
 import API from '../api';
 
@@ -9,7 +10,6 @@ const adminSidebar = [
   { label: 'Candidates', to: '/monitoring' },
   { label: 'Monitoring', to: '/monitoring' },
   { label: 'Results', to: '/results' },
-  { label: 'Payments', to: '/results' },
 ];
 
 function createQuestion() {
@@ -29,9 +29,9 @@ export default function CreateExam() {
   const [form, setForm] = useState({
     title: '',
     description: '',
+    groupId: '',
     duration: 60,
     startTime: '',
-    price: '',
     marksPerQuestion: 1,
     negativeMarking: 0,
     resultVisibility: 'immediate',
@@ -41,6 +41,19 @@ export default function CreateExam() {
   });
   const [questions, setQuestions] = useState([createQuestion()]);
   const [status, setStatus] = useState('');
+  const [groups, setGroups] = useState([]);
+
+  useEffect(() => {
+    const loadGroups = async () => {
+      try {
+        const res = await API.get('/groups/my');
+        setGroups((res.data || []).filter((group) => group.membershipRole === 'admin'));
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    loadGroups();
+  }, []);
 
   const updateQuestion = (idx, key, value) => {
     setQuestions((prev) => {
@@ -56,16 +69,16 @@ export default function CreateExam() {
     e.preventDefault();
     setStatus('');
     try {
-      const examRes = await API.post('/exams', {
+      const examRes = await API.post('/exams/create', {
         title: form.title,
         description: form.description,
+        groupId: form.groupId,
         duration: Number(form.duration),
         startTime: form.startTime,
         totalMarks: Number(form.marksPerQuestion) * questions.length,
         numberOfQuestions: questions.length,
         marksPerQuestion: Number(form.marksPerQuestion),
         negativeMarking: Number(form.negativeMarking || 0),
-        price: form.price ? Number(form.price) : 0,
         resultVisibility: form.resultVisibility,
         maxAttempts: Number(form.maxAttempts || 1),
         allowRetake: Boolean(form.allowRetake),
@@ -92,9 +105,9 @@ export default function CreateExam() {
       setForm({
         title: '',
         description: '',
+        groupId: '',
         duration: 60,
         startTime: '',
-        price: '',
         marksPerQuestion: 1,
         negativeMarking: 0,
         resultVisibility: 'immediate',
@@ -116,6 +129,21 @@ export default function CreateExam() {
         <form className='card create-exam-form' onSubmit={handleSave}>
           <h3>Exam Info</h3>
           <div className='grid two-col'>
+            <div>
+              <label>Group</label>
+              <select
+                required
+                value={form.groupId}
+                onChange={(e) => setForm((prev) => ({ ...prev, groupId: e.target.value }))}
+              >
+                <option value=''>Select group</option>
+                {groups.map((group) => (
+                  <option key={group._id} value={group._id}>
+                    {group.name}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div>
               <label>Title</label>
               <input
@@ -140,14 +168,6 @@ export default function CreateExam() {
                 required
                 value={form.startTime}
                 onChange={(e) => setForm((prev) => ({ ...prev, startTime: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label>Price (optional)</label>
-              <input
-                type='number'
-                value={form.price}
-                onChange={(e) => setForm((prev) => ({ ...prev, price: e.target.value }))}
               />
             </div>
             <div>

@@ -23,7 +23,7 @@ function auth(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret");
-    req.user = decoded;
+    res.locals.user = decoded;
     return next();
   } catch (err) {
     return res.status(401).json({ msg: "Token is not valid" });

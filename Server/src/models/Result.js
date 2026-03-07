@@ -10,6 +10,7 @@ const resultSchema = new mongoose.Schema(
     wrongAnswers: { type: Number, required: true, default: 0 },
     total: { type: Number, required: true, default: 0 },
     percentage: { type: Number, required: true, default: 0 },
+    rank: { type: Number, default: null, index: true },
     timeTakenSeconds: { type: Number, default: 0 },
     warningsCount: { type: Number, default: 0 },
     processedAt: { type: Date, default: Date.now },

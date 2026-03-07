@@ -1,12 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import API from '../api';
 import ExamTimer from '../components/ExamTimer';
 import QuestionCard from '../components/QuestionCard';
+import { createAuthedSocket } from '../socket';
+
+function getClientId(examId, fallback) {
+  const key = `exam:${examId}:clientId`;
+  const existing = localStorage.getItem(key);
+  if (existing) return existing;
+  const next = fallback || crypto.randomUUID();
+  localStorage.setItem(key, next);
+  return next;
+}
 
 export default function ExamPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [exam, setExam] = useState(null);
   const [session, setSession] = useState(null);
   const [answers, setAnswers] = useState({});
@@ -16,6 +27,8 @@ export default function ExamPage() {
   const [warnings, setWarnings] = useState([]);
   const [warningPopup, setWarningPopup] = useState('');
   const [loadError, setLoadError] = useState('');
+  const socketRef = useRef(null);
+  const clientIdRef = useRef(getClientId(id, location.state?.clientId));
 
   useEffect(() => {
     const init = async () => {
@@ -23,46 +36,68 @@ export default function ExamPage() {
         setLoadError('');
         const [examRes, sessionRes] = await Promise.all([
           API.get(`/exams/${id}`),
-          API.post(`/exams/${id}/start`, { clientId: crypto.randomUUID() }),
+          API.get(`/exams/${id}/session`),
         ]);
         setExam(examRes.data);
         setSession(sessionRes.data);
         const local = localStorage.getItem(`exam:${id}:answers`);
         const localAnswers = local ? JSON.parse(local) : {};
-        setAnswers({ ...(sessionRes.data.resumeAnswers || {}), ...localAnswers });
+        setAnswers({ ...(sessionRes.data.answers || {}), ...localAnswers });
         setWarnings(sessionRes.data.warnings || []);
         setTimeLeftMs(sessionRes.data.timeLeftMs || 0);
       } catch (err) {
-        setLoadError(err.response?.data?.msg || 'Unable to start exam right now.');
+        setLoadError(err.response?.data?.msg || 'Open the exam from the lobby before starting.');
       }
     };
     init();
   }, [id]);
 
-  // Timer countdown
   useEffect(() => {
-    if (!session || session.submitted) return;
-    const timer = setInterval(() => {
-      setTimeLeftMs((prev) => {
-        if (prev <= 1000) {
-          clearInterval(timer);
-          handleSubmit('time_over');
-          return 0;
-        }
-        return prev - 1000;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [session]);
+    if (!exam || !session || session.submitted) return;
 
-  // Auto-save answers every 15 seconds
+    const socket = createAuthedSocket();
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      socket.emit('exam:join', { examId: id, clientId: clientIdRef.current });
+    });
+
+    socket.on('exam:state', (payload) => {
+      setSession((prev) => ({ ...prev, ...payload }));
+      setTimeLeftMs(payload.timeLeftMs || 0);
+      setWarnings(payload.warnings || []);
+      setAnswers((prev) => ({ ...payload.resumeAnswers, ...prev }));
+    });
+
+    socket.on('exam:timer', (payload) => {
+      setTimeLeftMs(payload.timeLeftMs || 0);
+    });
+
+    socket.on('exam:warning:ack', (payload) => {
+      setSession((prev) => ({ ...prev, flagged: payload.flagged }));
+    });
+
+    socket.on('exam:submitted', () => {
+      localStorage.removeItem(`exam:${id}:answers`);
+      navigate('/results');
+    });
+
+    socket.on('exam:error', (payload) => {
+      setLoadError(payload?.msg || 'Socket connection failed for this exam.');
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [exam, session?.submitted, id, navigate]);
+
   useEffect(() => {
     if (!session || session.submitted || Object.keys(answers).length === 0) return;
 
     const autoSave = setInterval(async () => {
       try {
-        await API.post(`/exams/${id}/answers`, { answers });
-        console.log('Auto-save successful');
+        await API.post(`/exams/${id}/save`, { answers });
       } catch (err) {
         console.warn('Auto-save failed:', err.message);
       }
@@ -78,14 +113,21 @@ export default function ExamPage() {
       setWarningPopup(warningText);
       setTimeout(() => setWarningPopup(''), 2500);
       try {
-        const res = await API.post(`/exams/${id}/warnings`, {
-          type: 'tab_switch',
-          message: warningText,
-        });
-        setWarnings(res.data.warnings || []);
-        if (res.data.submitted) {
-          // exam auto-submitted due to excessive warnings, redirect to results
-          navigate('/results');
+        if (socketRef.current?.connected) {
+          socketRef.current.emit('exam:warning', {
+            examId: id,
+            type: 'tab_switch',
+            message: warningText,
+          });
+        } else {
+          const res = await API.post(`/exams/${id}/warnings`, {
+            type: 'tab_switch',
+            message: warningText,
+          });
+          setWarnings(res.data.warnings || []);
+          if (res.data.submitted) {
+            navigate('/results');
+          }
         }
       } catch (err) {
         console.error(err);
@@ -94,7 +136,6 @@ export default function ExamPage() {
 
     const onBeforeUnload = (e) => {
       if (!session || session.submitted) return;
-      // Send refresh warning to backend
       API.post(`/exams/${id}/warnings`, {
         type: 'page_refresh',
         message: 'Warning: page refresh detected during exam',
@@ -127,13 +168,20 @@ export default function ExamPage() {
     const next = { ...answers, [questionId]: value };
     setAnswers(next);
     localStorage.setItem(`exam:${id}:answers`, JSON.stringify(next));
+    if (socketRef.current?.connected) {
+      socketRef.current.emit('exam:answer', { examId: id, answers: { [questionId]: value } });
+    }
   };
 
   const handleSubmit = async (reason = 'manual_submit') => {
     try {
-      await API.post(`/exams/${id}/submit`, { answers, reason });
-      localStorage.removeItem(`exam:${id}:answers`);
-      navigate('/results');
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('exam:submit', { examId: id, answers, reason });
+      } else {
+        await API.post(`/exams/${id}/submit`, { answers, reason });
+        localStorage.removeItem(`exam:${id}:answers`);
+        navigate('/results');
+      }
     } catch (err) {
       console.error(err);
     }

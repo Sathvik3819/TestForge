@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import API from '../api';
+import { createAuthedSocket } from '../socket';
 
 const adminSidebar = [
   { label: 'Dashboard', to: '/admin' },
@@ -9,7 +10,6 @@ const adminSidebar = [
   { label: 'Candidates', to: '/monitoring' },
   { label: 'Monitoring', to: '/monitoring' },
   { label: 'Results', to: '/results' },
-  { label: 'Payments', to: '/results' },
 ];
 
 export default function Monitoring() {
@@ -28,6 +28,42 @@ export default function Monitoring() {
     fetchRows();
     const interval = setInterval(fetchRows, 5000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const connect = async () => {
+      try {
+        const examsRes = await API.get('/exams');
+        const examIds = (Array.isArray(examsRes.data) ? examsRes.data : []).map((exam) => exam._id);
+        if (!examIds.length) return;
+
+        const socket = createAuthedSocket();
+        socket.on('connect', () => {
+          examIds.forEach((examId) => socket.emit('admin:join-monitor', { examId }));
+        });
+        socket.on('admin:monitor:update', ({ examId, sessions }) => {
+          setRows((prev) => {
+            const filtered = prev.filter((row) => row.exam?._id !== examId && row.exam !== examId);
+            return [...filtered, ...(sessions || []).map((session) => ({
+              ...session,
+              exam: typeof session.exam === 'object' ? session.exam : { _id: examId },
+            }))];
+          });
+        });
+        return () => socket.disconnect();
+      } catch (err) {
+        return undefined;
+      }
+    };
+
+    let cleanup;
+    connect().then((fn) => {
+      cleanup = fn;
+    });
+
+    return () => {
+      if (cleanup) cleanup();
+    };
   }, []);
 
   return (

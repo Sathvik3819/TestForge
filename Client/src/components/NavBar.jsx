@@ -16,16 +16,16 @@ export default function NavBar() {
           {user ? (
             <>
               <Link to='/dashboard' className='nav-link'>
-                Dashboard
-              </Link>
-              <Link to='/exams' className='nav-link'>
-                Start Exam
+                Student Panel
               </Link>
               {user.role === 'admin' && (
                 <Link to='/admin' className='nav-link'>
                   Admin Panel
                 </Link>
               )}
+              <Link to='/profile' className='nav-link'>
+                Profile
+              </Link>
               <button onClick={logout} className='nav-action'>
                 Logout
               </button>

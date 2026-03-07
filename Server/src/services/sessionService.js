@@ -232,6 +232,7 @@ async function startOrResumeSession({
     session = await ExamSession.create({
       user: userId,
       exam: exam._id,
+      groupId: exam.groupId,
       startTime: new Date(),
       endTime: new Date(endTimeMs),
       warnings: [],
