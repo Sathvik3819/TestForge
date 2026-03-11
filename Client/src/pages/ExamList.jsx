@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import API from '../api';
+import LoadingSpinner from '../components/LoadingSpinner';
 import Sidebar from '../components/Sidebar';
 import { normalizeExamCategories } from '../examPayload';
 
@@ -162,7 +163,7 @@ export default function ExamList() {
             </div>
 
             {loading ? (
-              <p className='muted'>Loading exams...</p>
+              <LoadingSpinner label='Loading exams...' minHeight='180px' />
             ) : sortedSections[section.key].length > 0 ? (
               <div className='classroom-exam-grid classroom-exam-grid--wide'>
                 {sortedSections[section.key].map((exam) => {

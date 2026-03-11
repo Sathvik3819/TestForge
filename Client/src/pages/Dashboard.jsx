@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import API from '../api';
+import LoadingSpinner from '../components/LoadingSpinner';
 import { normalizeExamCategories, normalizeExamList } from '../examPayload';
 
 const classroomAccents = [
@@ -190,7 +191,7 @@ export default function UserDashboard() {
             )}
             {loading ? (
               <div className='card classroom-empty-state'>
-                <p className='muted'>Loading your classes...</p>
+                <LoadingSpinner label='Loading your classes...' minHeight='140px' />
               </div>
             ) : classroomCards.length > 0 ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>

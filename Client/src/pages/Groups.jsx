@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import API from '../api';
+import LoadingSpinner from '../components/LoadingSpinner';
 import Sidebar from '../components/Sidebar';
 
 export default function Groups() {
@@ -57,7 +58,7 @@ export default function Groups() {
             </div>
           </div>
           {loading ? (
-            <p className='muted'>Loading groups...</p>
+            <LoadingSpinner label='Loading groups...' minHeight='160px' />
           ) : (
             <div className='table-wrap'>
               <table>

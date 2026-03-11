@@ -1,4 +1,6 @@
-export default function QuestionCard({ question, index, selected, onSelect }) {
+import { memo } from 'react';
+
+function QuestionCard({ question, index, selected, onSelect }) {
   return (
     <div className='question-content'>
       <h3>
@@ -24,3 +26,5 @@ export default function QuestionCard({ question, index, selected, onSelect }) {
     </div>
   );
 }
+
+export default memo(QuestionCard);

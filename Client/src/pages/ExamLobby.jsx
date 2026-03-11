@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import API from '../api';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 function getClientId(examId) {
   const key = `exam:${examId}:clientId`;
@@ -61,7 +62,7 @@ export default function ExamLobby() {
     <div className='container'>
       <section className='card exam-lobby-card'>
         {loading ? (
-          <p>Loading exam lobby...</p>
+          <LoadingSpinner label='Loading exam lobby...' minHeight='220px' />
         ) : !lobby ? (
           <p>{error || 'Lobby not available.'}</p>
         ) : (
@@ -112,7 +113,9 @@ export default function ExamLobby() {
                 </button>
               ) : (
                 <button type='button' className='btn' onClick={handleStart} disabled={!lobby.canStart || starting}>
-                  {starting ? 'Starting...' : 'Start Exam'}
+                  {starting ? (
+                    <LoadingSpinner inline size='sm' className='loading-spinner--button' label='Starting...' />
+                  ) : 'Start Exam'}
                 </button>
               )}
             </div>

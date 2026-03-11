@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import API from '../api';
+import LoadingSpinner from '../components/LoadingSpinner';
 import { AuthContext } from '../context/AuthContext';
 
 export default function JoinGroup() {
@@ -54,7 +55,7 @@ export default function JoinGroup() {
         <div className='container' style={{ maxWidth: '600px', margin: '4rem auto' }}>
             <div className='card' style={{ textAlign: 'center', padding: '2rem' }}>
                 {loading ? (
-                    <p className='muted'>Checking invite link...</p>
+                    <LoadingSpinner label='Checking invite link...' minHeight='180px' />
                 ) : error ? (
                     <>
                         <h2 style={{ marginBottom: '1rem', color: '#dc2626' }}>Invite Invalid</h2>
@@ -90,7 +91,9 @@ export default function JoinGroup() {
                                 onClick={handleJoin}
                                 disabled={joining}
                             >
-                                {joining ? 'Joining...' : 'Join Classroom'}
+                                {joining ? (
+                                    <LoadingSpinner inline size='sm' className='loading-spinner--button' label='Joining...' />
+                                ) : 'Join Classroom'}
                             </button>
                         </div>
                     </>

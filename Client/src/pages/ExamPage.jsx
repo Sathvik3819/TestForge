@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import API from '../api';
 import ExamTimer from '../components/ExamTimer';
+import LoadingSpinner from '../components/LoadingSpinner';
+import QuestionNavigator from '../components/QuestionNavigator';
 import QuestionCard from '../components/QuestionCard';
 import { createAuthedSocket } from '../socket';
 
@@ -29,6 +31,18 @@ export default function ExamPage() {
   const [loadError, setLoadError] = useState('');
   const socketRef = useRef(null);
   const clientIdRef = useRef(getClientId(id, location.state?.clientId));
+  const answersRef = useRef({});
+  const warningTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
+
+  useEffect(() => () => {
+    if (warningTimeoutRef.current) {
+      window.clearTimeout(warningTimeoutRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     const init = async () => {
@@ -93,25 +107,41 @@ export default function ExamPage() {
   }, [exam, session?.submitted, id, navigate]);
 
   useEffect(() => {
-    if (!session || session.submitted || Object.keys(answers).length === 0) return;
+    if (!session || session.submitted) return;
 
     const autoSave = setInterval(async () => {
+      const pendingAnswers = answersRef.current;
+      if (Object.keys(pendingAnswers).length === 0) {
+        return;
+      }
+
       try {
-        await API.post(`/exams/${id}/save`, { answers });
+        await API.post(`/exams/${id}/save`, { answers: pendingAnswers });
       } catch (err) {
         console.warn('Auto-save failed:', err.message);
       }
     }, 15000); // Auto-save every 15 seconds
 
     return () => clearInterval(autoSave);
-  }, [id, session, answers]);
+  }, [id, session?.submitted]);
+
+  const showWarningPopup = useCallback((message) => {
+    if (warningTimeoutRef.current) {
+      window.clearTimeout(warningTimeoutRef.current);
+    }
+
+    setWarningPopup(message);
+    warningTimeoutRef.current = window.setTimeout(() => {
+      warningTimeoutRef.current = null;
+      setWarningPopup('');
+    }, 2500);
+  }, []);
 
   useEffect(() => {
     const onVisibility = async () => {
       if (!document.hidden) return;
       const warningText = 'Warning: tab switch detected';
-      setWarningPopup(warningText);
-      setTimeout(() => setWarningPopup(''), 2500);
+      showWarningPopup(warningText);
       try {
         if (socketRef.current?.connected) {
           socketRef.current.emit('exam:warning', {
@@ -160,18 +190,30 @@ export default function ExamPage() {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('beforeunload', onBeforeUnload);
     };
-  }, [id, session]);
+  }, [id, navigate, session, showWarningPopup]);
 
   const currentQuestion = exam?.questions?.[currentIndex];
 
-  const saveAnswer = async (questionId, value) => {
-    const next = { ...answers, [questionId]: value };
-    setAnswers(next);
-    localStorage.setItem(`exam:${id}:answers`, JSON.stringify(next));
+  const saveAnswer = useCallback((questionId, value) => {
+    const answerPatch = { [questionId]: value };
+    setAnswers((prev) => {
+      const next = { ...prev, ...answerPatch };
+      localStorage.setItem(`exam:${id}:answers`, JSON.stringify(next));
+      return next;
+    });
+
     if (socketRef.current?.connected) {
-      socketRef.current.emit('exam:answer', { examId: id, answers: { [questionId]: value } });
+      socketRef.current.emit('exam:answer', { examId: id, answers: answerPatch });
     }
-  };
+  }, [id]);
+
+  const handleSelectAnswer = useCallback((value) => {
+    if (!currentQuestion?._id) {
+      return;
+    }
+
+    saveAnswer(currentQuestion._id, value);
+  }, [currentQuestion?._id, saveAnswer]);
 
   const handleSubmit = async (reasonParam) => {
     const reason = typeof reasonParam === 'string' ? reasonParam : 'manual_submit';
@@ -203,7 +245,7 @@ export default function ExamPage() {
               </p>
             </>
           ) : (
-            'Loading exam...'
+            <LoadingSpinner label='Loading exam...' minHeight='220px' />
           )}
         </div>
       </div>
@@ -216,18 +258,12 @@ export default function ExamPage() {
 
       <aside className='exam-left card'>
         <h3>Questions</h3>
-        <div className='question-nav-grid'>
-          {numbers.map((idx) => (
-            <button
-              type='button'
-              key={idx}
-              className={`qnav-btn ${currentIndex === idx ? 'active' : ''} ${marked[idx] ? 'marked' : ''}`}
-              onClick={() => setCurrentIndex(idx)}
-            >
-              Q{idx + 1}
-            </button>
-          ))}
-        </div>
+        <QuestionNavigator
+          numbers={numbers}
+          currentIndex={currentIndex}
+          marked={marked}
+          onSelectQuestion={setCurrentIndex}
+        />
       </aside>
 
       <main className='exam-center card'>
@@ -235,7 +271,7 @@ export default function ExamPage() {
           question={currentQuestion}
           index={currentIndex}
           selected={answers[currentQuestion._id]}
-          onSelect={(value) => saveAnswer(currentQuestion._id, value)}
+          onSelect={handleSelectAnswer}
         />
 
         <div className='exam-actions'>

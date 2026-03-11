@@ -1,31 +1,68 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { Suspense, useContext, useEffect } from 'react';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { AuthContext, AuthProvider } from './context/AuthContext';
+import LoadingSpinner from './components/LoadingSpinner';
 import NavBar from './components/NavBar';
 import ProtectedRoute from './components/ProtectedRoute';
-
-import Landing from './pages/Landing';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
-import UserDashboard from './pages/Dashboard';
-import AdminPanel from './pages/AdminPanel';
-import ExamList from './pages/ExamList';
-import ExamLobby from './pages/ExamLobby';
-import ExamPage from './pages/ExamPage';
-import ExamResults from './pages/ExamResults';
-import Groups from './pages/Groups';
-import GroupDetail from './pages/GroupDetail';
-import JoinGroup from './pages/JoinGroup';
-import Results from './pages/Results';
-import Profile from './pages/Profile';
+import {
+  AdminPanel,
+  ExamList,
+  ExamLobby,
+  ExamPage,
+  ExamResults,
+  GroupDetail,
+  Groups,
+  JoinGroup,
+  Landing,
+  Login,
+  Profile,
+  Results,
+  Signup,
+  UserDashboard,
+} from './lazyPages';
 import './App.css';
 
-function App() {
+function RouteFallback() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <div className='app-shell'>
-          <NavBar />
-          <main className='page-shell'>
+    <div className='container'>
+      <div className='card' style={{ minHeight: '160px', display: 'grid', placeItems: 'center' }}>
+        <LoadingSpinner label='Loading...' />
+      </div>
+    </div>
+  );
+}
+
+function AppShell() {
+  const { user } = useContext(AuthContext);
+
+  useEffect(() => {
+    const preloadPages = () => {
+      if (user) {
+        const authedPages = [UserDashboard, Groups, GroupDetail, ExamList, Profile, Results];
+        if (user.role === 'admin') {
+          authedPages.push(AdminPanel);
+        }
+
+        authedPages.forEach((page) => page.preload?.());
+        return;
+      }
+
+      [Landing, Login, Signup].forEach((page) => page.preload?.());
+    };
+
+    const scheduleIdleTask = window.requestIdleCallback || ((callback) => window.setTimeout(callback, 250));
+    const cancelIdleTask = window.cancelIdleCallback || window.clearTimeout;
+    const taskId = scheduleIdleTask(preloadPages);
+
+    return () => cancelIdleTask(taskId);
+  }, [user]);
+
+  return (
+    <BrowserRouter>
+      <div className='app-shell'>
+        <NavBar />
+        <main className='page-shell'>
+          <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path='/' element={<Landing />} />
               <Route path='/login' element={<Login />} />
@@ -119,9 +156,17 @@ function App() {
                 }
               />
             </Routes>
-          </main>
-        </div>
-      </BrowserRouter>
+          </Suspense>
+        </main>
+      </div>
+    </BrowserRouter>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
     </AuthProvider>
   );
 }

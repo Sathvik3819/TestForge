@@ -1,6 +1,7 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import API from '../api';
+import LoadingSpinner from '../components/LoadingSpinner';
 import Sidebar from '../components/Sidebar';
 import { AuthContext } from '../context/AuthContext';
 import { normalizeExamCategories } from '../examPayload';
@@ -250,7 +251,9 @@ export default function GroupDetail() {
           disabled={actionLoading === 'leave'}
           style={{ maxWidth: "200px" }}
         >
-          {actionLoading === 'leave' ? 'Leaving...' : 'Leave class'}
+          {actionLoading === 'leave' ? (
+            <LoadingSpinner inline size='sm' className='loading-spinner--button' label='Leaving...' />
+          ) : 'Leave class'}
         </button>
       </div>
 
@@ -402,7 +405,9 @@ export default function GroupDetail() {
       {showAdminControls && <Sidebar title='Admin Panel' items={adminSidebarItems} />}
       <section className={`dashboard-main ${showAdminControls ? '' : 'classroom-main classroom-main--student'}`.trim()}>
         {loading ? (
-          <div className='card'>Loading group...</div>
+          <div className='card'>
+            <LoadingSpinner label='Loading group...' minHeight='220px' />
+          </div>
         ) : !group ? (
           <div className='card'>{feedback.text || 'Group not found.'}</div>
         ) : (
@@ -436,13 +441,31 @@ export default function GroupDetail() {
 
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                   <button type='button' className='btn secondary' onClick={handleRegenerateJoinCode} disabled={actionLoading === 'joinCode'} style={{ backgroundColor: '#4f46e5', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg> Regenerate Join Code
+                    {actionLoading === 'joinCode' ? (
+                      <LoadingSpinner inline size='sm' className='loading-spinner--button' label='Updating code...' />
+                    ) : (
+                      <>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg> Regenerate Join Code
+                      </>
+                    )}
                   </button>
                   <button type='button' className='btn secondary' onClick={handleGenerateInviteLink} disabled={actionLoading === 'inviteLink'} style={{ backgroundColor: '#4f46e5', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg> Generate Invite Link
+                    {actionLoading === 'inviteLink' ? (
+                      <LoadingSpinner inline size='sm' className='loading-spinner--button' label='Generating link...' />
+                    ) : (
+                      <>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg> Generate Invite Link
+                      </>
+                    )}
                   </button>
                   <button type='button' className='btn secondary' onClick={handleLeaveGroup} disabled={actionLoading === 'leave'} style={{ backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #f87171', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Leave Group
+                    {actionLoading === 'leave' ? (
+                      <LoadingSpinner inline size='sm' className='loading-spinner--button' label='Leaving group...' />
+                    ) : (
+                      <>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Leave Group
+                      </>
+                    )}
                   </button>
 
                 </div>

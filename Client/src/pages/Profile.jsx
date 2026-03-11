@@ -1,4 +1,5 @@
 import { useState, useContext, useEffect } from 'react';
+import LoadingSpinner from '../components/LoadingSpinner';
 import Sidebar from '../components/Sidebar';
 import { AuthContext } from '../context/AuthContext';
 import API from '../api';
@@ -104,7 +105,7 @@ export default function Profile() {
         return (
             <div className='auth-wrap'>
                 <div className='card'>
-                    <h2>Loading...</h2>
+                    <LoadingSpinner label='Loading profile...' minHeight='180px' />
                 </div>
             </div>
         );
@@ -286,7 +287,9 @@ export default function Profile() {
                                                 Cancel
                                             </button>
                                             <button type='submit' className='btn' disabled={loading}>
-                                                {loading ? 'Saving...' : 'Save Changes'}
+                                                {loading ? (
+                                                    <LoadingSpinner inline size='sm' className='loading-spinner--button' label='Saving...' />
+                                                ) : 'Save Changes'}
                                             </button>
                                         </div>
                                     )}
@@ -360,7 +363,9 @@ export default function Profile() {
                                     others to guess.
                                 </div>
                                 <button type='submit' className='btn' disabled={passLoading}>
-                                    {passLoading ? 'Updating...' : 'Update Password'}
+                                    {passLoading ? (
+                                        <LoadingSpinner inline size='sm' className='loading-spinner--button' label='Updating...' />
+                                    ) : 'Update Password'}
                                 </button>
                             </form>
                         </div>

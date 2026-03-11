@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import API from '../api';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function AdminManageExams({ exams, onRefresh, onViewResults, onEditExam }) {
     const [examList, setExamList] = useState(exams || []);
@@ -49,7 +50,9 @@ export default function AdminManageExams({ exams, onRefresh, onViewResults, onEd
             <h2>Manage Exams</h2>
 
             {loading ? (
-                <p className='muted'>Loading exams...</p>
+                <div className='card'>
+                    <LoadingSpinner label='Loading exams...' minHeight='180px' />
+                </div>
             ) : (
                 <div className='card table-wrap'>
                     <table>
@@ -88,7 +91,9 @@ export default function AdminManageExams({ exams, onRefresh, onViewResults, onEd
                                                         onClick={() => handlePublish(exam._id)}
                                                         disabled={actionLoading[exam._id]}
                                                     >
-                                                        {actionLoading[exam._id] ? 'Publishing...' : 'Publish'}
+                                                        {actionLoading[exam._id] ? (
+                                                            <LoadingSpinner inline size='sm' className='loading-spinner--button' label='Publishing...' />
+                                                        ) : 'Publish'}
                                                     </button>
                                                 )}
                                                 {exam.status !== 'Active' && exam.status !== 'Completed' && (

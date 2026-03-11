@@ -1,29 +1,39 @@
-import { createContext, useState, useEffect } from 'react';
-import API from '../api';
+import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 
 export const AuthContext = createContext();
 
-export function AuthProvider({ children }) {
-    const [user, setUser] = useState(() => {
-        const token = localStorage.getItem('token');
-        const cachedUser = localStorage.getItem('user');
-        if (token) {
-            let parsedUser = {};
-            if (cachedUser) {
-                try {
-                    parsedUser = JSON.parse(cachedUser);
-                } catch (err) { }
-            }
-            return { token, ...parsedUser };
-        }
+async function loadApi() {
+    const module = await import('../api');
+    return module.default;
+}
+
+function getStoredSession() {
+    const token = localStorage.getItem('token');
+    const cachedUser = localStorage.getItem('user');
+
+    if (!token) {
         return null;
-    });
+    }
+
+    let parsedUser = {};
+    if (cachedUser) {
+        try {
+            parsedUser = JSON.parse(cachedUser);
+        } catch (err) { }
+    }
+
+    return { token, ...parsedUser };
+}
+
+export function AuthProvider({ children }) {
+    const [user, setUser] = useState(getStoredSession);
 
     useEffect(() => {
         const token = localStorage.getItem('token');
         // if we don't have createdAt or other fresh info, fetch from server securely in the background
         if (token && user && !user.createdAt) {
-            API.get('/auth/me')
+            loadApi()
+                .then((API) => API.get('/auth/me'))
                 .then((res) => {
                     const fresh = { token, ...res.data };
                     setUser(fresh);
@@ -35,28 +45,38 @@ export function AuthProvider({ children }) {
         }
     }, []);
 
-    const login = async (email, password) => {
+    const login = useCallback(async (email, password) => {
+        const API = await loadApi();
         const res = await API.post('/auth/login', { email, password });
         localStorage.setItem('token', res.data.token);
         localStorage.setItem('user', JSON.stringify(res.data.user || {}));
         const sessionUser = { token: res.data.token, ...(res.data.user || {}) };
         setUser(sessionUser);
         return sessionUser;
-    };
+    }, []);
 
-    const signup = async (data) => {
+    const signup = useCallback(async (data) => {
+        const API = await loadApi();
         const res = await API.post('/auth/signup', data);
         return res.data;
-    };
+    }, []);
 
-    const logout = () => {
+    const logout = useCallback(() => {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         setUser(null);
-    };
+    }, []);
+
+    const value = useMemo(() => ({
+        user,
+        setUser,
+        login,
+        signup,
+        logout,
+    }), [login, logout, signup, user]);
 
     return (
-        <AuthContext.Provider value={{ user, setUser, login, signup, logout }}>
+        <AuthContext.Provider value={value}>
             {children}
         </AuthContext.Provider>
     );

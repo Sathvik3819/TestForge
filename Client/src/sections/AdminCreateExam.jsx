@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import API from '../api';
+import LoadingSpinner from '../components/LoadingSpinner';
 
 function createQuestion() {
     return {
@@ -450,7 +451,14 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
                     </div>
                 )}
                 <button type='submit' className='btn' disabled={isLoading}>
-                    {isLoading ? (editExamId ? 'Updating...' : 'Saving...') : (editExamId ? 'Update Exam' : 'Save Exam')}
+                    {isLoading ? (
+                        <LoadingSpinner
+                            inline
+                            size='sm'
+                            className='loading-spinner--button'
+                            label={editExamId ? 'Updating...' : 'Saving...'}
+                        />
+                    ) : (editExamId ? 'Update Exam' : 'Save Exam')}
                 </button>
             </form>
         </section>

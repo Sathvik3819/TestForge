@@ -182,6 +182,75 @@
   background: #10b981;
 }
 
+.loading-spinner {
+  --spinner-size: 2rem;
+  --spinner-border: 3px;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: #64748b;
+}
+
+.loading-spinner--block {
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  padding: 1rem;
+}
+
+.loading-spinner--inline {
+  display: inline-flex;
+  justify-content: center;
+}
+
+.loading-spinner--sm {
+  --spinner-size: 1rem;
+  --spinner-border: 2px;
+  gap: 0.5rem;
+}
+
+.loading-spinner--lg {
+  --spinner-size: 2.5rem;
+  --spinner-border: 4px;
+}
+
+.loading-spinner-circle {
+  width: var(--spinner-size);
+  height: var(--spinner-size);
+  border-radius: 999px;
+  border: var(--spinner-border) solid #dbe4ef;
+  border-top-color: #4f46e5;
+  animation: loading-spinner-rotate 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+.loading-spinner-label {
+  margin: 0;
+  color: inherit;
+  font-weight: 500;
+}
+
+.loading-spinner--button {
+  color: inherit;
+}
+
+.loading-spinner--button .loading-spinner-circle {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: currentColor;
+}
+
+.btn.secondary .loading-spinner--button .loading-spinner-circle,
+.btn.ghost .loading-spinner--button .loading-spinner-circle {
+  border-color: rgba(49, 46, 129, 0.22);
+  border-top-color: currentColor;
+}
+
+@keyframes loading-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .auth-wrap {
   min-height: calc(100vh - 220px);
   display: grid;

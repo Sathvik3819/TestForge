@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import API from '../api';
+import LoadingSpinner from '../components/LoadingSpinner';
 import ResultChart from '../components/ResultChart';
 import { normalizeExamList } from '../examPayload';
 
@@ -81,7 +82,9 @@ export default function AdminResults({ selectedExamId: propSelectedExamId, group
             {!groupId && <h2>Exam Results & Analytics</h2>}
 
             {loading ? (
-                <p className='muted'>Loading exams...</p>
+                <div className='card'>
+                    <LoadingSpinner label='Loading exams...' minHeight='180px' />
+                </div>
             ) : exams.length === 0 ? (
                 <div className='card'>
                     <p className='muted'>No exams available.</p>
@@ -125,7 +128,9 @@ export default function AdminResults({ selectedExamId: propSelectedExamId, group
                             </div>
 
                             {resultLoading ? (
-                                <p className='muted'>Loading results...</p>
+                                <div className='card'>
+                                    <LoadingSpinner label='Loading results...' minHeight='180px' />
+                                </div>
                             ) : results.length > 0 ? (
                                 <>
                                     <div className='grid'>

@@ -1,6 +1,7 @@
 import { useContext, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ResultChart from '../components/ResultChart';
+import LoadingSpinner from '../components/LoadingSpinner';
 import API from '../api';
 import { AuthContext } from '../context/AuthContext';
 
@@ -37,7 +38,7 @@ export default function Results() {
     if (loading) {
       return (
         <div className='card'>
-          <p>Loading results...</p>
+          <LoadingSpinner label='Loading results...' minHeight='220px' />
         </div>
       );
     }
