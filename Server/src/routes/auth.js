@@ -5,6 +5,7 @@ const User = require("../models/User");
 const auth = require("../middleware/auth");
 const { createRateLimiter } = require("../middleware/rateLimit");
 const { logAuthAttempt } = require("../services/auditLog");
+const { getJwtSecret } = require("../config/env");
 
 
 const router = express.Router();
@@ -13,11 +14,6 @@ const authLimiter = createRateLimiter({
   maxRequests: 30,
   keyFn: (req) => `auth:${req.ip}`,
 });
-
-function getJwtSecret() {
-  return process.env.JWT_SECRET || "secret";
-}
-
 function signAuthToken(user) {
   return jwt.sign(
     { id: user._id, email: user.email },

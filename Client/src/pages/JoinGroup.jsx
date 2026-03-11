@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import API from '../api';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { AuthContext } from '../context/AuthContext';
+import { AuthContext } from '../context/AuthContextValue';
 
 export default function JoinGroup() {
     const { token } = useParams();

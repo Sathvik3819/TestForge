@@ -1,7 +1,7 @@
 import { useState, useContext, useEffect } from 'react';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Sidebar from '../components/Sidebar';
-import { AuthContext } from '../context/AuthContext';
+import { AuthContext } from '../context/AuthContextValue';
 import API from '../api';
 
 export default function Profile() {

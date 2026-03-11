@@ -56,5 +56,8 @@ const examSessionSchema = new mongoose.Schema(
 );
 
 examSessionSchema.index({ user: 1, exam: 1 });
+examSessionSchema.index({ exam: 1, user: 1, submitted: 1, status: 1, createdAt: -1 });
+examSessionSchema.index({ user: 1, submitted: 1, exam: 1 });
+examSessionSchema.index({ exam: 1, submitted: 1, updatedAt: -1 });
 
 module.exports = mongoose.model("ExamSession", examSessionSchema);

@@ -54,4 +54,8 @@ questionSchema.path("correctAnswer").validate(function validateCorrectAnswer(
   return (this.options || []).some((option) => option.text === value);
 }, "Correct answer must match one option");
 
+examSchema.index({ groupId: 1, published: 1, createdAt: -1 });
+examSchema.index({ groupId: 1, startTime: -1 });
+examSchema.index({ createdBy: 1, createdAt: -1 });
+
 module.exports = mongoose.model("Exam", examSchema);

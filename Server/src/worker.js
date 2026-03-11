@@ -1,11 +1,12 @@
 const mongoose = require("mongoose");
 require("./config/loadEnv");
+const { getMongoUri } = require("./config/env");
 const { ensureRedisConnection } = require("./services/redisClient");
 const { startResultWorker } = require("./services/resultQueue");
 
 async function startWorker() {
   try {
-    await mongoose.connect(process.env.MONGO_URI || "mongodb://localhost/testforge");
+    await mongoose.connect(getMongoUri());
     await ensureRedisConnection();
     startResultWorker();
     console.log("Result worker is running");

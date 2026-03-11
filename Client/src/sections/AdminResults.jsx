@@ -136,7 +136,7 @@ export default function AdminResults({ selectedExamId: propSelectedExamId, group
                                     <div className='grid'>
                                         <ResultChart
                                             title='Score Distribution'
-                                            data={results.slice(0, 10).map((r, i) => ({
+                                            data={results.slice(0, 10).map((r) => ({
                                                 label: `#${r.rank}`,
                                                 value: r.percentage,
                                             }))}

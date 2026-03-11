@@ -5,7 +5,7 @@ function getSocketBaseUrl() {
   const explicit = import.meta.env.VITE_SOCKET_URL;
   if (explicit) return explicit;
 
-  const apiBase = API.defaults.baseURL || "http://localhost:4000/api";
+  const apiBase = API.defaults.baseURL || "/api";
   return apiBase.replace(/\/api\/?$/, "");
 }
 

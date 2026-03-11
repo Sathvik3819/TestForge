@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import ResultChart from '../components/ResultChart';
 import LoadingSpinner from '../components/LoadingSpinner';
 import API from '../api';
-import { AuthContext } from '../context/AuthContext';
+import { AuthContext } from '../context/AuthContextValue';
 
 export default function Results() {
   const { user } = useContext(AuthContext);

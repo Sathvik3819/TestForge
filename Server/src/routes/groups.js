@@ -7,7 +7,9 @@ const Exam = require("../models/Exam");
 const Result = require("../models/Result");
 const auth = require("../middleware/auth");
 const { requireRole } = require("../middleware/roles");
-const { syncExamStatus } = require("../services/examAccessService");
+const {
+  serializeExamListWithDerivedStatus,
+} = require("../services/examAccessService");
 const {
   createGroup,
   ensureMembership,
@@ -21,8 +23,12 @@ const {
 } = require("../services/groupService");
 
 function mapMembershipGroup(membership) {
+  const groupDoc = membership.groupId || {};
+  const group =
+    typeof groupDoc.toObject === "function" ? groupDoc.toObject() : groupDoc;
+
   return {
-    ...membership.groupId.toObject(),
+    ...group,
     membershipRole: membership.role,
     joinedAt: membership.joinedAt || membership.createdAt,
   };
@@ -120,7 +126,10 @@ router.get("/my", auth, async (req, res) => {
   try {
     const memberships = await GroupMember.find({
       userId: res.locals.user.id,
-    }).populate("groupId");
+    })
+      .select("groupId role joinedAt createdAt")
+      .populate("groupId")
+      .lean();
     const groups = memberships.map(mapMembershipGroup);
     res.json(groups);
   } catch (error) {
@@ -134,7 +143,10 @@ router.get("/joined", auth, async (req, res) => {
   try {
     const memberships = await GroupMember.find({
       userId: res.locals.user.id,
-    }).populate("groupId");
+    })
+      .select("groupId role joinedAt createdAt")
+      .populate("groupId")
+      .lean();
 
     const groups = memberships
       .filter((membership) => {
@@ -155,12 +167,14 @@ router.get("/created", auth, requireRole("admin"), async (req, res) => {
   try {
     const groups = await Group.find({ createdBy: res.locals.user.id }).sort({
       createdAt: -1,
-    });
+    }).lean();
 
     const memberships = await GroupMember.find({
       userId: res.locals.user.id,
       groupId: { $in: groups.map((group) => group._id) },
-    });
+    })
+      .select("groupId role joinedAt createdAt")
+      .lean();
 
     const membershipByGroupId = new Map(
       memberships.map((membership) => [
@@ -173,7 +187,7 @@ router.get("/created", auth, requireRole("admin"), async (req, res) => {
       groups.map((group) => {
         const membership = membershipByGroupId.get(String(group._id));
         return {
-          ...group.toObject(),
+          ...group,
           membershipRole: membership?.role || "admin",
           joinedAt: membership?.joinedAt || membership?.createdAt || group.createdAt,
         };
@@ -223,7 +237,7 @@ router.post("/:id/join-code/regenerate", auth, requireRole("admin"), async (req,
 // GET /api/groups/:id - Get group info
 router.get("/:id", auth, async (req, res) => {
   try {
-    const group = await Group.findById(req.params.id);
+    const group = await Group.findById(req.params.id).lean();
     if (!group) return res.status(404).json({ error: "Group not found" });
 
     const membership = await ensureMembership({
@@ -240,7 +254,7 @@ router.get("/:id", auth, async (req, res) => {
     ]);
 
     res.json({
-      ...group.toObject(),
+      ...group,
       maxMembers: group.maxMembers || 200,
       membershipRole: membership.role,
       joinedAt: membership.joinedAt || membership.createdAt,
@@ -265,8 +279,10 @@ router.get("/:id/members", auth, async (req, res) => {
     });
 
     const members = await GroupMember.find({ groupId: req.params.id })
+      .select("userId role joinedAt createdAt")
       .populate("userId", "name email role")
-      .sort({ role: 1, joinedAt: 1 });
+      .sort({ role: 1, joinedAt: 1 })
+      .lean();
     res.json(members);
   } catch (error) {
     if (error.statusCode) {
@@ -291,13 +307,10 @@ router.get("/:id/exams", auth, async (req, res) => {
       ...((membership.role === "admin" && !joinedScope) ? {} : { published: true }),
     })
       .populate("createdBy", "name")
-      .sort({ startTime: -1 });
+      .sort({ startTime: -1 })
+      .lean();
 
-    for (const exam of exams) {
-      await syncExamStatus(exam);
-    }
-
-    res.json(exams);
+    res.json(serializeExamListWithDerivedStatus(exams));
   } catch (error) {
     if (error.statusCode) {
       return res.status(error.statusCode).json({ error: error.message });
@@ -316,10 +329,7 @@ router.get("/:id/results", auth, async (req, res) => {
     });
     const mineOnly = req.query.scope === "mine";
 
-    const exams = await Exam.find({ groupId: req.params.id }).select(
-      "_id title resultVisibility resultsPublished startTime duration",
-    );
-    const examIds = exams.map((exam) => exam._id);
+    const examIds = await Exam.distinct("_id", { groupId: req.params.id });
 
     if (!examIds.length) {
       return res.json([]);
@@ -331,9 +341,13 @@ router.get("/:id/results", auth, async (req, res) => {
         ? {}
         : { user: res.locals.user.id }),
     })
+      .select(
+        "exam user score total percentage correctAnswers wrongAnswers timeTakenSeconds createdAt",
+      )
       .populate("user", "name email")
       .populate("exam", "title resultVisibility resultsPublished startTime duration")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     const visibleResults =
       membership.role === "admin" && !mineOnly
@@ -383,9 +397,11 @@ router.get("/:id/activity", auth, async (req, res) => {
     });
 
     const activities = await GroupActivity.find({ groupId: req.params.id })
+      .select("actorId type message metadata createdAt")
       .populate("actorId", "name email")
       .sort({ createdAt: -1 })
-      .limit(50);
+      .limit(50)
+      .lean();
 
     res.json(
       activities.map((activity) => ({

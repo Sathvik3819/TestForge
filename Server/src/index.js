@@ -4,15 +4,28 @@ const http = require("http");
 const { Server } = require("socket.io");
 const mongoose = require("mongoose");
 require("./config/loadEnv");
+const { getServerConfig } = require("./config/env");
 
 const { ensureRedisConnection } = require("./services/redisClient");
 const { startResultWorker } = require("./services/resultQueue");
 const { registerSocketHandlers } = require("./services/socketService");
 const { createRateLimiter } = require("./middleware/rateLimit");
 
+const config = getServerConfig();
 const app = express();
-app.use(cors());
-app.use(express.json());
+app.set("trust proxy", config.trustProxy);
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || config.allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("CORS origin not allowed"));
+    },
+  }),
+);
+app.use(express.json({ limit: "1mb" }));
 app.use(
   createRateLimiter({
     windowMs: 60 * 1000,
@@ -22,7 +35,10 @@ app.use(
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: {
+    origin: config.allowedOrigins,
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
+  },
 });
 
 // mount routes
@@ -38,13 +54,19 @@ app.get("/", (req, res) => {
   res.send("TestForge backend is running");
 });
 
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    env: config.nodeEnv,
+    uptime: process.uptime(),
+  });
+});
+
 registerSocketHandlers(io);
 
 async function start() {
   try {
-    await mongoose.connect(
-      process.env.MONGO_URI || "mongodb://localhost/testforge",
-    );
+    await mongoose.connect(config.mongoUri);
     console.log("mongodb connected");
     try {
       await ensureRedisConnection();
@@ -58,9 +80,8 @@ async function start() {
       );
     }
 
-    const port = process.env.PORT || 4000;
-    server.listen(port, () => {
-      console.log("Server listening on port", port);
+    server.listen(config.port, () => {
+      console.log("Server listening on port", config.port);
     });
   } catch (err) {
     console.error("Server startup failed:", err);

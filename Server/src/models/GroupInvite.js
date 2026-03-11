@@ -22,4 +22,7 @@ const groupInviteSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
+groupInviteSchema.index({ groupId: 1, used: 1, expiresAt: 1 });
+groupInviteSchema.index({ expiresAt: 1 });
+
 module.exports = mongoose.model("GroupInvite", groupInviteSchema);

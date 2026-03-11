@@ -7,23 +7,42 @@ function getExamWindow(exam) {
   return { start, end };
 }
 
-async function syncExamStatus(exam) {
-  const now = Date.now();
+function deriveExamStatus(exam, now = Date.now()) {
   const { start, end } = getExamWindow(exam);
 
-  let nextStatus = exam.status;
   if (!exam.published) {
-    nextStatus = "Draft";
-  } else if (now < start) {
-    nextStatus = "Scheduled";
-  } else if (now >= start && now <= end) {
-    nextStatus = "Active";
-  } else if (now > end) {
-    nextStatus =
-      exam.resultsPublished || exam.resultVisibility === "immediate"
-        ? "Completed"
-        : "Ended";
+    return "Draft";
   }
+
+  if (now < start) {
+    return "Scheduled";
+  }
+
+  if (now >= start && now <= end) {
+    return "Active";
+  }
+
+  return exam.resultsPublished || exam.resultVisibility === "immediate"
+    ? "Completed"
+    : "Ended";
+}
+
+function serializeExamWithDerivedStatus(exam, now = Date.now()) {
+  const payload =
+    exam && typeof exam.toObject === "function" ? exam.toObject() : { ...exam };
+
+  return {
+    ...payload,
+    status: deriveExamStatus(exam, now),
+  };
+}
+
+function serializeExamListWithDerivedStatus(exams = [], now = Date.now()) {
+  return exams.map((exam) => serializeExamWithDerivedStatus(exam, now));
+}
+
+async function syncExamStatus(exam) {
+  const nextStatus = deriveExamStatus(exam);
 
   if (nextStatus !== exam.status) {
     exam.status = nextStatus;
@@ -50,13 +69,13 @@ async function ensureExamMembership({ userId, groupId }) {
 }
 
 async function validateExamAccessForStart({ exam, userId }) {
-  await syncExamStatus(exam);
   await ensureExamMembership({ userId, groupId: exam.groupId });
 
   const now = Date.now();
   const { start, end } = getExamWindow(exam);
+  const examStatus = deriveExamStatus(exam, now);
 
-  if (exam.status !== "Active") {
+  if (examStatus !== "Active") {
     const err = new Error("Exam is not active");
     err.statusCode = 403;
     throw err;
@@ -98,13 +117,12 @@ async function validateExamAccessForStart({ exam, userId }) {
     activeSession,
     canStart: !activeSession,
     now,
+    examStatus,
     examWindow: { start, end },
   };
 }
 
 async function getExamLobbyState({ exam, userId }) {
-  await syncExamStatus(exam);
-
   let membership = null;
   try {
     membership = await ensureExamMembership({ userId, groupId: exam.groupId });
@@ -114,6 +132,7 @@ async function getExamLobbyState({ exam, userId }) {
 
   const now = Date.now();
   const { start, end } = getExamWindow(exam);
+  const examStatus = deriveExamStatus(exam, now);
   const activeSession = membership
     ? await ExamSession.findOne({
       exam: exam._id,
@@ -145,11 +164,11 @@ async function getExamLobbyState({ exam, userId }) {
     totalMarks: exam.totalMarks,
     startTime: exam.startTime,
     endTime: new Date(end),
-    status: exam.status,
+    status: examStatus,
     rules,
     canStart:
       Boolean(membership) &&
-      exam.status === "Active" &&
+      examStatus === "Active" &&
       now >= start &&
       now <= end &&
       submittedAttempts < exam.maxAttempts &&
@@ -165,6 +184,9 @@ async function getExamLobbyState({ exam, userId }) {
 
 module.exports = {
   getExamWindow,
+  deriveExamStatus,
+  serializeExamWithDerivedStatus,
+  serializeExamListWithDerivedStatus,
   syncExamStatus,
   ensureExamMembership,
   validateExamAccessForStart,

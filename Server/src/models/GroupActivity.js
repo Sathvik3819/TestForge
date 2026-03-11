@@ -32,4 +32,6 @@ const groupActivitySchema = new mongoose.Schema(
   { timestamps: true, versionKey: false },
 );
 
+groupActivitySchema.index({ groupId: 1, createdAt: -1 });
+
 module.exports = mongoose.model("GroupActivity", groupActivitySchema);

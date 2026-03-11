@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 
-export default function Sidebar({ title, items, onClick }) {
+export default function Sidebar({ title, items }) {
   const location = useLocation();
 
   return (
@@ -42,4 +42,3 @@ export default function Sidebar({ title, items, onClick }) {
     </aside>
   );
 }
-

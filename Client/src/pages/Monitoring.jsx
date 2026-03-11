@@ -49,7 +49,7 @@ export default function Monitoring() {
           });
         });
         return () => socket.disconnect();
-      } catch (err) {
+      } catch {
         return undefined;
       }
     };

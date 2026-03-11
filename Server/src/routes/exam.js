@@ -16,6 +16,8 @@ const {
 const { enqueueResultProcessing } = require("../services/resultQueue");
 const {
   getExamWindow,
+  serializeExamListWithDerivedStatus,
+  serializeExamWithDerivedStatus,
   syncExamStatus,
   ensureExamMembership,
   validateExamAccessForStart,
@@ -211,12 +213,10 @@ async function ensureAdminGroupAccess(userId, groupId) {
 }
 
 async function getAdminGroupIds(userId) {
-  const memberships = await GroupMember.find({
+  return GroupMember.distinct("groupId", {
     userId,
     role: "admin",
-  }).select("groupId");
-
-  return memberships.map((membership) => membership.groupId);
+  });
 }
 
 async function getAdminExamIds(userId) {
@@ -225,13 +225,28 @@ async function getAdminExamIds(userId) {
     return [];
   }
 
-  const exams = await Exam.find({ groupId: { $in: groupIds } }).select("_id");
-  return exams.map((exam) => exam._id);
+  return Exam.distinct("_id", { groupId: { $in: groupIds } });
+}
+
+function mapMonitorSession(session, now = Date.now()) {
+  return {
+    sessionId: session._id,
+    user: session.user,
+    exam: session.exam,
+    status: session.status,
+    warningsCount: session.warningsCount || session.warnings?.length || 0,
+    flagged: session.flagged,
+    submitted: session.submitted,
+    endedReason: session.endedReason,
+    timeLeftMs: Math.max(0, new Date(session.endTime).getTime() - now),
+    lastSeenAt: session.lastSeenAt,
+    disconnectedAt: session.disconnectedAt,
+  };
 }
 
 async function handleAutosave(req, res) {
   try {
-    const exam = await Exam.findById(req.params.id);
+    const exam = await Exam.findById(req.params.id).select("questions");
     if (!exam) return res.status(404).json({ msg: "Exam not found" });
 
     const session = await ExamSession.findOne({
@@ -260,36 +275,31 @@ router.get("/", auth, async (req, res) => {
     const asAdmin = req.query.as === "admin";
 
     if (!asAdmin) {
-      // Get user's groups
-      const memberships = await GroupMember.find({
+      const groupIds = await GroupMember.distinct("groupId", {
         userId: res.locals.user.id,
       });
-      const groupIds = memberships.map((m) => m.groupId);
       query = { groupId: { $in: groupIds }, published: true };
     } else {
       const groupIds = await getAdminGroupIds(res.locals.user.id);
       query = { groupId: { $in: groupIds } };
     }
 
-    const exams = await Exam.find(query).sort({ createdAt: -1 });
-
-    for (const exam of exams) {
-      await syncExamStatus(exam);
-    }
+    const now = Date.now();
+    const exams = serializeExamListWithDerivedStatus(
+      await Exam.find(query).sort({ createdAt: -1 }).lean(),
+      now,
+    );
 
     if (asAdmin) {
       return res.json(exams);
     }
 
-    // Categorize exams
-    const now = new Date();
     const availableExams = [];
     const upcomingExams = [];
     const completedExams = [];
 
     for (const exam of exams) {
-      const start = new Date(exam.startTime);
-      const end = new Date(start.getTime() + exam.duration * 60000);
+      const { start, end } = getExamWindow(exam);
 
       if (exam.status === "Completed") {
         completedExams.push(exam);
@@ -318,24 +328,16 @@ router.get("/monitor/live", auth, requireRole("admin"), async (req, res) => {
       submitted: false,
       exam: { $in: examIds },
     })
+      .select(
+        "user exam status warnings warningsCount flagged submitted endedReason endTime lastSeenAt disconnectedAt",
+      )
       .populate("user", "name email role")
       .populate("exam", "title duration startTime status")
-      .sort({ updatedAt: -1 });
+      .sort({ updatedAt: -1 })
+      .lean();
 
     const now = Date.now();
-    const data = sessions.map((session) => ({
-      sessionId: session._id,
-      user: session.user,
-      exam: session.exam,
-      status: session.status,
-      warningsCount: session.warningsCount || session.warnings.length,
-      flagged: session.flagged,
-      submitted: session.submitted,
-      timeLeftMs: Math.max(0, new Date(session.endTime).getTime() - now),
-      lastSeenAt: session.lastSeenAt,
-    }));
-
-    return res.json(data);
+    return res.json(sessions.map((session) => mapMonitorSession(session, now)));
   } catch (err) {
     return res
       .status(500)
@@ -347,12 +349,16 @@ router.get("/monitor/live", auth, requireRole("admin"), async (req, res) => {
 router.get("/results/me", auth, async (req, res) => {
   try {
     const results = await Result.find({ user: res.locals.user.id })
+      .select(
+        "exam session score correctAnswers wrongAnswers total percentage timeTakenSeconds warningsCount processedAt createdAt",
+      )
       .populate(
         "exam",
         "title duration startTime resultVisibility resultsPublished",
       )
       .populate("session", "endedReason")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     const visibleResults = results.filter((result) => {
       const exam = result.exam || {};
@@ -394,10 +400,12 @@ router.get(
       const resultMatch = { exam: { $in: examIds } };
       const [topPerformers, avgRows, examStats] = await Promise.all([
         Result.find(resultMatch)
+          .select("user exam score percentage timeTakenSeconds createdAt")
           .populate("user", "name email")
           .populate("exam", "title")
           .sort({ percentage: -1, timeTakenSeconds: 1, submittedAt: 1 })
-          .limit(10),
+          .limit(10)
+          .lean(),
         Result.aggregate([
           {
             $match: resultMatch,
@@ -463,12 +471,10 @@ router.get(
 // get all submitted exams for current user
 router.get("/sessions/me", auth, async (req, res) => {
   try {
-    const sessions = await ExamSession.find({
+    const submittedExamIds = await ExamSession.distinct("exam", {
       user: res.locals.user.id,
       submitted: true,
-    }).select("exam");
-
-    const submittedExamIds = sessions.map((s) => s.exam.toString());
+    });
     return res.json({ submittedExamIds });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -478,9 +484,9 @@ router.get("/sessions/me", auth, async (req, res) => {
 // get one exam
 router.get("/:id", auth, async (req, res) => {
   try {
-    const exam = await Exam.findById(req.params.id);
+    const exam = await Exam.findById(req.params.id).lean();
     if (!exam) return res.status(404).json({ msg: "Exam not found" });
-    await syncExamStatus(exam);
+    const serializedExam = serializeExamWithDerivedStatus(exam);
 
     if (res.locals.user.role === "admin") {
       await ensureAdminGroupAccess(res.locals.user.id, exam.groupId);
@@ -495,7 +501,7 @@ router.get("/:id", auth, async (req, res) => {
       return res.status(403).json({ msg: "Exam is not published yet" });
     }
 
-    res.json(exam);
+    res.json(serializedExam);
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
   }
@@ -503,7 +509,7 @@ router.get("/:id", auth, async (req, res) => {
 
 router.get("/:id/lobby", auth, async (req, res) => {
   try {
-    const exam = await Exam.findById(req.params.id);
+    const exam = await Exam.findById(req.params.id).lean();
     if (!exam) return res.status(404).json({ msg: "Exam not found" });
 
     const lobby = await getExamLobbyState({
@@ -841,7 +847,12 @@ router.get("/:id/session", auth, async (req, res) => {
     const session = await ExamSession.findOne({
       exam: req.params.id,
       user: res.locals.user.id,
-    }).sort({ createdAt: -1 });
+    })
+      .select(
+        "exam submitted status flagged attemptNo endTime warnings answers resumePoint",
+      )
+      .sort({ createdAt: -1 })
+      .lean();
     if (!session) return res.status(404).json({ msg: "No session found" });
 
     return res.json({
@@ -908,7 +919,7 @@ router.post("/:id/warnings", auth, async (req, res) => {
 
       // fetch exam and auto-submit zero-score result
       try {
-        const exam = await Exam.findById(req.params.id);
+        const exam = await Exam.findById(req.params.id).select("_id");
         if (exam) {
           // clear any answers and submit immediately
           session.answers = [];
@@ -936,7 +947,7 @@ router.post("/:id/warnings", auth, async (req, res) => {
 // submit exam answers
 router.post("/:id/submit", auth, async (req, res) => {
   try {
-    const exam = await Exam.findById(req.params.id);
+    const exam = await Exam.findById(req.params.id).select("questions");
     if (!exam) return res.status(404).json({ msg: "Exam not found" });
 
     let session = await ExamSession.findOne({
@@ -978,28 +989,36 @@ router.post("/:id/submit", auth, async (req, res) => {
 // live monitoring dashboard (admin)
 router.get("/:id/monitor", auth, requireRole("admin"), async (req, res) => {
   try {
-    const exam = await Exam.findById(req.params.id).select("groupId");
+    const exam = await Exam.findById(req.params.id).select("groupId").lean();
     if (!exam) return res.status(404).json({ msg: "Exam not found" });
     await ensureAdminGroupAccess(res.locals.user.id, exam.groupId);
 
     const sessions = await ExamSession.find({ exam: req.params.id })
+      .select(
+        "user status submitted submittedAt warnings warningsCount flagged endTime startTime lastSeenAt",
+      )
       .populate("user", "name email role")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     const now = Date.now();
-    const monitoring = sessions.map((session) => ({
-      sessionId: session._id,
-      user: session.user,
-      status: session.status,
-      submitted: session.submitted,
-      submittedAt: session.submittedAt,
-      warnings: session.warnings,
-      warningsCount: session.warningsCount || session.warnings.length,
-      flagged: session.flagged,
-      timeLeftMs: Math.max(0, new Date(session.endTime).getTime() - now),
-      startTime: session.startTime,
-      lastSeenAt: session.lastSeenAt,
-    }));
+    const monitoring = sessions.map((session) => {
+      const base = mapMonitorSession(session, now);
+
+      return {
+        sessionId: base.sessionId,
+        user: base.user,
+        status: base.status,
+        submitted: base.submitted,
+        submittedAt: session.submittedAt,
+        warnings: session.warnings,
+        warningsCount: base.warningsCount,
+        flagged: base.flagged,
+        timeLeftMs: base.timeLeftMs,
+        startTime: session.startTime,
+        lastSeenAt: base.lastSeenAt,
+      };
+    });
 
     res.json(monitoring);
   } catch (err) {
@@ -1010,13 +1029,15 @@ router.get("/:id/monitor", auth, requireRole("admin"), async (req, res) => {
 // leaderboard/ranking
 router.get("/:id/leaderboard", auth, requireRole("admin"), async (req, res) => {
   try {
-    const exam = await Exam.findById(req.params.id).select("groupId");
+    const exam = await Exam.findById(req.params.id).select("groupId").lean();
     if (!exam) return res.status(404).json({ msg: "Exam not found" });
     await ensureAdminGroupAccess(res.locals.user.id, exam.groupId);
 
     const results = await Result.find({ exam: req.params.id })
+      .select("user score percentage timeTakenSeconds")
       .populate("user", "name email")
-      .sort({ score: -1, timeTakenSeconds: 1, processedAt: 1 });
+      .sort({ score: -1, timeTakenSeconds: 1, processedAt: 1 })
+      .lean();
 
     const leaderboard = results.map((result, idx) => ({
       rank: idx + 1,
@@ -1037,7 +1058,9 @@ router.get("/:id/leaderboard", auth, requireRole("admin"), async (req, res) => {
 // get detailed results for a specific exam (for current user or admin)
 router.get("/:id/results", auth, async (req, res) => {
   try {
-    const exam = await Exam.findById(req.params.id);
+    const exam = await Exam.findById(req.params.id).select(
+      "groupId published title questions startTime duration resultVisibility resultsPublished",
+    ).lean();
     if (!exam) return res.status(404).json({ msg: "Exam not found" });
 
     // Check visibility for non-admin users
@@ -1053,7 +1076,12 @@ router.get("/:id/results", auth, async (req, res) => {
     const result = await Result.findOne({
       exam: req.params.id,
       user: res.locals.user.id,
-    }).populate("session");
+    })
+      .select(
+        "score total correctAnswers wrongAnswers percentage timeTakenSeconds warningsCount session",
+      )
+      .populate("session", "answers")
+      .lean();
 
     if (!result) {
       return res.status(404).json({ msg: "Result not found for this user" });
@@ -1061,22 +1089,21 @@ router.get("/:id/results", auth, async (req, res) => {
 
     // Check if results are visible
     if (res.locals.user.role !== "admin") {
-      const examData = typeof result.exam === "object" ? result.exam : exam;
-      const endMs = new Date(examData.startTime).getTime() + (examData.duration || 0) * 60000;
+      const endMs = new Date(exam.startTime).getTime() + (exam.duration || 0) * 60000;
       const now = Date.now();
 
-      if (!examData.resultsPublished) {
-        if (examData.resultVisibility === "delayed") {
+      if (!exam.resultsPublished) {
+        if (exam.resultVisibility === "delayed") {
           return res.status(403).json({ msg: "Results are not yet published" });
         }
-        if (examData.resultVisibility === "immediate" && now < endMs) {
+        if (exam.resultVisibility === "immediate" && now < endMs) {
           return res.status(403).json({ msg: "Results will be available after the exam ends" });
         }
       }
     }
 
     // Get the exam session with answers
-    const session = result.session;
+    const session = result.session || {};
 
     // Build response sheet with each question and answer details
     const responseSheet = exam.questions.map((question) => {
@@ -1105,7 +1132,9 @@ router.get("/:id/results", auth, async (req, res) => {
     });
 
     const timeTakenMinutes = Math.floor(result.timeTakenSeconds / 60);
-    const accuracy = ((result.correctAnswers / result.total) * 100).toFixed(2);
+    const accuracy = result.total
+      ? ((result.correctAnswers / result.total) * 100).toFixed(2)
+      : "0.00";
 
     return res.json({
       examTitle: exam.title,

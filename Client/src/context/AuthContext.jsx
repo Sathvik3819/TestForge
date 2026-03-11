@@ -1,6 +1,5 @@
-import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
-
-export const AuthContext = createContext();
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AuthContext } from './AuthContextValue';
 
 async function loadApi() {
     const module = await import('../api');
@@ -19,7 +18,9 @@ function getStoredSession() {
     if (cachedUser) {
         try {
             parsedUser = JSON.parse(cachedUser);
-        } catch (err) { }
+        } catch {
+            parsedUser = {};
+        }
     }
 
     return { token, ...parsedUser };
@@ -30,7 +31,6 @@ export function AuthProvider({ children }) {
 
     useEffect(() => {
         const token = localStorage.getItem('token');
-        // if we don't have createdAt or other fresh info, fetch from server securely in the background
         if (token && user && !user.createdAt) {
             loadApi()
                 .then((API) => API.get('/auth/me'))
@@ -40,10 +40,9 @@ export function AuthProvider({ children }) {
                     localStorage.setItem('user', JSON.stringify(res.data));
                 })
                 .catch(() => {
-                    // ignore, maybe token expired or offline
                 });
         }
-    }, []);
+    }, [user]);
 
     const login = useCallback(async (email, password) => {
         const API = await loadApi();

@@ -33,6 +33,8 @@ export default function ExamPage() {
   const clientIdRef = useRef(getClientId(id, location.state?.clientId));
   const answersRef = useRef({});
   const warningTimeoutRef = useRef(null);
+  const hasSession = Boolean(session);
+  const isSessionSubmitted = Boolean(session?.submitted);
 
   useEffect(() => {
     answersRef.current = answers;
@@ -67,7 +69,7 @@ export default function ExamPage() {
   }, [id]);
 
   useEffect(() => {
-    if (!exam || !session || session.submitted) return;
+    if (!exam || !hasSession || isSessionSubmitted) return;
 
     const socket = createAuthedSocket();
     socketRef.current = socket;
@@ -104,10 +106,10 @@ export default function ExamPage() {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [exam, session?.submitted, id, navigate]);
+  }, [exam, hasSession, id, isSessionSubmitted, navigate]);
 
   useEffect(() => {
-    if (!session || session.submitted) return;
+    if (!hasSession || isSessionSubmitted) return;
 
     const autoSave = setInterval(async () => {
       const pendingAnswers = answersRef.current;
@@ -123,7 +125,7 @@ export default function ExamPage() {
     }, 15000); // Auto-save every 15 seconds
 
     return () => clearInterval(autoSave);
-  }, [id, session?.submitted]);
+  }, [hasSession, id, isSessionSubmitted]);
 
   const showWarningPopup = useCallback((message) => {
     if (warningTimeoutRef.current) {
@@ -165,7 +167,7 @@ export default function ExamPage() {
     };
 
     const onBeforeUnload = (e) => {
-      if (!session || session.submitted) return;
+      if (!hasSession || isSessionSubmitted) return;
       API.post(`/exams/${id}/warnings`, {
         type: 'page_refresh',
         message: 'Warning: page refresh detected during exam',
@@ -190,7 +192,7 @@ export default function ExamPage() {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('beforeunload', onBeforeUnload);
     };
-  }, [id, navigate, session, showWarningPopup]);
+  }, [hasSession, id, isSessionSubmitted, navigate, showWarningPopup]);
 
   const currentQuestion = exam?.questions?.[currentIndex];
 
@@ -207,13 +209,13 @@ export default function ExamPage() {
     }
   }, [id]);
 
-  const handleSelectAnswer = useCallback((value) => {
+  const handleSelectAnswer = (value) => {
     if (!currentQuestion?._id) {
       return;
     }
 
     saveAnswer(currentQuestion._id, value);
-  }, [currentQuestion?._id, saveAnswer]);
+  };
 
   const handleSubmit = async (reasonParam) => {
     const reason = typeof reasonParam === 'string' ? reasonParam : 'manual_submit';

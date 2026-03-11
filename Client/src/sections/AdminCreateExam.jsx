@@ -90,7 +90,7 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
                 });
                 const mappedQuestions = (exam.questions || []).map(mapExamQuestion);
                 setQuestions(mappedQuestions.length ? mappedQuestions : [createQuestion()]);
-            } catch (err) {
+            } catch {
                 setStatus('Failed to load exam for editing');
             } finally {
                 setIsLoading(false);

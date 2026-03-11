@@ -1,7 +1,20 @@
 import axios from "axios";
 
+function getApiBaseUrl() {
+  const explicit = import.meta.env.VITE_API_URL;
+  if (explicit) {
+    return explicit;
+  }
+
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/api`;
+  }
+
+  return "/api";
+}
+
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:4000/api",
+  baseURL: getApiBaseUrl(),
 });
 
 // attach token automatically

@@ -1,9 +1,9 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import API from '../api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Sidebar from '../components/Sidebar';
-import { AuthContext } from '../context/AuthContext';
+import { AuthContext } from '../context/AuthContextValue';
 import { normalizeExamCategories } from '../examPayload';
 import AdminResults from '../sections/AdminResults';
 
@@ -74,13 +74,12 @@ export default function GroupDetail() {
   const [exams, setExams] = useState([]);
   const [results, setResults] = useState([]);
   const [submittedSessionIds, setSubmittedSessionIds] = useState(new Set());
-  const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState('');
   const [feedback, setFeedback] = useState({ type: '', text: '' });
   const [activeTab, setActiveTab] = useState('exams');
 
-  const loadGroup = async () => {
+  const loadGroup = useCallback(async () => {
     try {
       setLoading(true);
       setFeedback((prev) => (prev.type === 'error' ? { type: '', text: '' } : prev));
@@ -91,11 +90,10 @@ export default function GroupDetail() {
         user?.role === 'admin' &&
         String(nextGroup?.createdBy || '') === String(user?.id || '');
 
-      const [membersRes, examsRes, resultsRes, activityRes, sessionsRes] = await Promise.all([
+      const [membersRes, examsRes, resultsRes, sessionsRes] = await Promise.all([
         API.get(`/groups/${id}/members`),
         API.get(`/groups/${id}/exams${createdContext ? '' : '?scope=joined'}`),
         API.get(`/groups/${id}/results${createdContext ? '' : '?scope=mine'}`),
-        API.get(`/groups/${id}/activity`),
         API.get('/exams/sessions/me'),
       ]);
 
@@ -104,14 +102,12 @@ export default function GroupDetail() {
       setExams(examsRes.data || []);
       setResults(resultsRes.data || []);
       setSubmittedSessionIds(new Set(sessionsRes.data?.submittedExamIds || []));
-      setActivity(activityRes.data || []);
     } catch (err) {
       setGroup(null);
       setMembers([]);
       setExams([]);
       setResults([]);
       setSubmittedSessionIds(new Set());
-      setActivity([]);
       setFeedback({
         type: 'error',
         text: err.response?.data?.error || 'Failed to load group.',
@@ -119,11 +115,11 @@ export default function GroupDetail() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, user?.id, user?.role]);
 
   useEffect(() => {
     loadGroup();
-  }, [id, user?.id, user?.role]);
+  }, [loadGroup]);
 
   const isCreatedGroup =
     user?.role === 'admin' &&
@@ -151,27 +147,6 @@ export default function GroupDetail() {
     results: results.length,
     members: members.length,
   }), [members.length, results.length, sortedCategories]);
-  const nextExam = sortedCategories.availableExams[0] || sortedCategories.upcomingExams[0] || null;
-
-  const handleRemoveMember = async (memberId) => {
-    if (!window.confirm('Remove this member from the group?')) {
-      return;
-    }
-
-    try {
-      setActionLoading(`remove:${memberId}`);
-      await API.delete(`/groups/${id}/members/${memberId}`);
-      setFeedback({ type: 'success', text: 'Member removed successfully.' });
-      await loadGroup();
-    } catch (err) {
-      setFeedback({
-        type: 'error',
-        text: err.response?.data?.error || 'Unable to remove member.',
-      });
-    } finally {
-      setActionLoading('');
-    }
-  };
 
   const handleLeaveGroup = async () => {
     if (!window.confirm('Leave this group? You will lose access to its exams.')) {
@@ -530,7 +505,6 @@ export default function GroupDetail() {
                         <tbody>
                           {members.length > 0 ? (
                             members.map((member) => {
-                              const isCurrentUser = String(member.userId?._id || '') === String(user?.id || '');
                               return (
                                 <tr key={member._id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                                   <td style={{ padding: '16px 0', color: '#111827', fontWeight: 500 }}>{member.userId?.name || 'Member'}</td>

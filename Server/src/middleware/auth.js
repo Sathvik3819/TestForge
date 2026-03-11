@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const { getJwtSecret } = require("../config/env");
 
 function extractToken(req) {
   const headerToken = req.header("x-auth-token");
@@ -22,7 +23,7 @@ function auth(req, res, next) {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret");
+    const decoded = jwt.verify(token, getJwtSecret());
     res.locals.user = decoded;
     return next();
   } catch (err) {

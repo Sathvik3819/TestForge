@@ -19,5 +19,7 @@ const groupMemberSchema = new mongoose.Schema(
 );
 
 groupMemberSchema.index({ userId: 1, groupId: 1 }, { unique: true });
+groupMemberSchema.index({ userId: 1, role: 1, groupId: 1 });
+groupMemberSchema.index({ groupId: 1, role: 1, joinedAt: 1 });
 
 module.exports = mongoose.model("GroupMember", groupMemberSchema);

@@ -20,7 +20,7 @@ export default function Groups() {
       setLoading(true);
       const res = await API.get('/groups/joined');
       setGroups(res.data || []);
-    } catch (err) {
+    } catch {
       setError('Failed to load groups');
     } finally {
       setLoading(false);

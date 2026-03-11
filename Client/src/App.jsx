@@ -1,6 +1,7 @@
 import { Suspense, useContext, useEffect } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import { AuthContext, AuthProvider } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
+import { AuthContext } from './context/AuthContextValue';
 import LoadingSpinner from './components/LoadingSpinner';
 import NavBar from './components/NavBar';
 import ProtectedRoute from './components/ProtectedRoute';

@@ -2,7 +2,7 @@ import { useContext, useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import API from '../api';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { AuthContext } from '../context/AuthContext';
+import { AuthContext } from '../context/AuthContextValue';
 import ResultChart from '../components/ResultChart';
 
 export default function ExamResults() {

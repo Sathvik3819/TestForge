@@ -18,4 +18,9 @@ const resultSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+resultSchema.index({ user: 1, createdAt: -1 });
+resultSchema.index({ exam: 1, createdAt: -1 });
+resultSchema.index({ exam: 1, percentage: -1, timeTakenSeconds: 1, processedAt: 1 });
+resultSchema.index({ exam: 1, user: 1, createdAt: -1 });
+
 module.exports = mongoose.model("Result", resultSchema);
