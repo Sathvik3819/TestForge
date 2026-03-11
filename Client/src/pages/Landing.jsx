@@ -8,10 +8,10 @@ export default function Landing() {
         <h1>TestForge — Real-Time Assessment Platform</h1>
         <p>Secure online exams with real-time monitoring and automated evaluation.</p>
         <div className='hero-actions'>
-          <Link to='/exams' className='btn'>
+          <Link to='/dashboard' className='btn'>
             Start Exam
           </Link>
-          <Link to='/create-exam' className='btn secondary'>
+          <Link to='/admin' className='btn secondary'>
             Create Exam
           </Link>
         </div>

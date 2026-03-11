@@ -1,14 +1,8 @@
 import { useContext, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import ResultChart from '../components/ResultChart';
 import API from '../api';
 import { AuthContext } from '../context/AuthContext';
-import Sidebar from '../components/Sidebar';
-
-const sidebarItems = [
-  { label: 'Dashboard', to: '/dashboard' },
-  { label: 'My Exams', to: '/exams' },
-  { label: 'Profile', to: '/dashboard' },
-];
 
 export default function Results() {
   const { user } = useContext(AuthContext);
@@ -119,9 +113,17 @@ export default function Results() {
   };
 
   return (
-    <div className='dashboard-layout'>
-      <Sidebar title='Student Panel' items={sidebarItems} />
-      <section className='dashboard-main'>{renderContent()}</section>
+    <div className='container'>
+      <section className='dashboard-main classroom-main classroom-main--student'>
+        <div className='split classroom-section-head'>
+          <div>
+            <h2>My Results</h2>
+            <p className='muted'>Review your latest exam performance.</p>
+          </div>
+          <Link to='/dashboard' className='btn secondary'>Back to classes</Link>
+        </div>
+        {renderContent()}
+      </section>
     </div>
   );
 }

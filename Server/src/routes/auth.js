@@ -20,7 +20,7 @@ function getJwtSecret() {
 
 function signAuthToken(user) {
   return jwt.sign(
-    { id: user._id, email: user.email, role: user.role },
+    { id: user._id, email: user.email },
     getJwtSecret(),
     {
       expiresIn: "1d",
@@ -33,7 +33,6 @@ function sanitizeUser(user) {
     id: user._id,
     name: user.name,
     email: user.email,
-    role: user.role,
     createdAt: user.createdAt,
   };
 }
@@ -43,7 +42,7 @@ function isValidEmail(email) {
 }
 
 router.post("/signup", authLimiter, async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password } = req.body;
 
   if (!name || !email || !password) {
     return res
@@ -62,10 +61,6 @@ router.post("/signup", authLimiter, async (req, res) => {
       .json({ msg: "Password must be at least 6 characters" });
   }
 
-  if (role && !["student", "admin"].includes(role)) {
-    return res.status(400).json({ msg: "Role must be student or admin" });
-  }
-
   try {
     const existing = await User.findOne({ email: normalizedEmail });
     if (existing) {
@@ -73,12 +68,10 @@ router.post("/signup", authLimiter, async (req, res) => {
     }
 
     const hash = await bcrypt.hash(password, 10);
-    const finalRole = role === "admin" ? "admin" : "student";
     const user = await User.create({
       name: String(name).trim(),
       email: normalizedEmail,
       password: hash,
-      role: finalRole,
     });
 
     const token = signAuthToken(user);

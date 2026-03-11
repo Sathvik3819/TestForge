@@ -6,10 +6,8 @@ import ResultChart from '../components/ResultChart';
 const adminSidebar = [
   { label: 'Dashboard', to: '/admin' },
   { label: 'Create Exam', to: '/create-exam' },
-  { label: 'Manage Exams', to: '/exams' },
   { label: 'Candidates', to: '/monitoring' },
   { label: 'Monitoring', to: '/monitoring' },
-  { label: 'Results', to: '/results' },
 ];
 
 export default function AdminDashboard() {
@@ -20,7 +18,7 @@ export default function AdminDashboard() {
     const fetchData = async () => {
       try {
         const [examRes, monitorRes] = await Promise.all([
-          API.get('/exams'),
+          API.get('/exams?as=admin'),
           API.get('/exams/monitor/live'),
         ]);
         setExams(examRes.data || []);

@@ -1,22 +1,18 @@
 import { useContext, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import API from '../api';
 import { AuthContext } from '../context/AuthContext';
 import ResultChart from '../components/ResultChart';
-import Sidebar from '../components/Sidebar';
-
-const sidebarItems = [
-  { label: 'Dashboard', to: '/dashboard' },
-  { label: 'Groups', to: '/groups' },
-  { label: 'My Exams', to: '/exams' },
-];
 
 export default function ExamResults() {
   const { examId } = useParams();
+  const location = useLocation();
   const { user } = useContext(AuthContext);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const backTarget = location.state?.from || '/dashboard';
+  const backLabel = backTarget.startsWith('/groups/') ? 'Back to class' : 'Back to classes';
 
   useEffect(() => {
     const fetchResults = async () => {
@@ -52,8 +48,8 @@ export default function ExamResults() {
         <div className='card'>
           <p className='error'>{error}</p>
           <div style={{ marginTop: '1rem' }}>
-            <Link to='/exams' className='btn secondary'>
-              Back to My Exams
+            <Link to={backTarget} className='btn secondary'>
+              {backLabel}
             </Link>
           </div>
         </div>
@@ -65,8 +61,8 @@ export default function ExamResults() {
         <div className='card'>
           <p>No results available</p>
           <div style={{ marginTop: '1rem' }}>
-            <Link to='/exams' className='btn secondary'>
-              Back to My Exams
+            <Link to={backTarget} className='btn secondary'>
+              {backLabel}
             </Link>
           </div>
         </div>
@@ -87,8 +83,8 @@ export default function ExamResults() {
             }}
           >
             <h2 style={{ margin: 0 }}>{result.examTitle}</h2>
-            <Link to='/exams' className='btn secondary'>
-              Back to My Exams
+            <Link to={backTarget} className='btn secondary'>
+              {backLabel}
             </Link>
           </div>
 
@@ -219,9 +215,8 @@ export default function ExamResults() {
   };
 
   return (
-    <div className='dashboard-layout'>
-      <Sidebar title='Student Panel' items={sidebarItems} />
-      <section className='dashboard-main'>{renderContent()}</section>
+    <div className='container'>
+      <section className='dashboard-main classroom-main classroom-main--student'>{renderContent()}</section>
     </div>
   );
 }

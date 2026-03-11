@@ -17,7 +17,7 @@ export default function Admin() {
   useEffect(() => {
     const fetchExams = async () => {
       try {
-        const res = await API.get('/exams');
+        const res = await API.get('/exams?as=admin');
         setExams(res.data);
       } catch (err) {
         console.error(err);
@@ -28,7 +28,7 @@ export default function Admin() {
   }, []);
 
   const refreshExams = async () => {
-    const res = await API.get('/exams');
+    const res = await API.get('/exams?as=admin');
     setExams(res.data);
   };
 

@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+require("./config/loadEnv");
 const { ensureRedisConnection } = require("./services/redisClient");
 const { startResultWorker } = require("./services/resultQueue");
 

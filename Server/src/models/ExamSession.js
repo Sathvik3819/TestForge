@@ -17,7 +17,6 @@ const examSessionSchema = new mongoose.Schema(
     groupId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Group",
-      required: true,
     },
     startTime: { type: Date, required: true },
     endTime: { type: Date, required: true },

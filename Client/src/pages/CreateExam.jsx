@@ -6,10 +6,8 @@ import API from '../api';
 const adminSidebar = [
   { label: 'Dashboard', to: '/admin' },
   { label: 'Create Exam', to: '/create-exam' },
-  { label: 'Manage Exams', to: '/exams' },
   { label: 'Candidates', to: '/monitoring' },
   { label: 'Monitoring', to: '/monitoring' },
-  { label: 'Results', to: '/results' },
 ];
 
 function createQuestion() {
@@ -46,8 +44,8 @@ export default function CreateExam() {
   useEffect(() => {
     const loadGroups = async () => {
       try {
-        const res = await API.get('/groups/my');
-        setGroups((res.data || []).filter((group) => group.membershipRole === 'admin'));
+        const res = await API.get('/groups/created');
+        setGroups(res.data || []);
       } catch (err) {
         console.error(err);
       }

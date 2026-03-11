@@ -92,9 +92,10 @@ async function applySessionLock(examId, userId, ownerId) {
 
   const key = getSessionLockKey(examId, userId);
   const existingOwner = await redis.get(key);
-  const multipleLogin = Boolean(existingOwner && existingOwner !== ownerId);
+  const ownerStr = String(ownerId);
+  const multipleLogin = Boolean(existingOwner && existingOwner !== ownerStr);
 
-  await redis.set(key, ownerId, { EX: 12 * 60 * 60 });
+  await redis.set(key, ownerStr, { EX: 12 * 60 * 60 });
 
   return { multipleLogin, existingOwner };
 }

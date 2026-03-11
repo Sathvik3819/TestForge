@@ -173,7 +173,8 @@ export default function ExamPage() {
     }
   };
 
-  const handleSubmit = async (reason = 'manual_submit') => {
+  const handleSubmit = async (reasonParam) => {
+    const reason = typeof reasonParam === 'string' ? reasonParam : 'manual_submit';
     try {
       if (socketRef.current?.connected) {
         socketRef.current.emit('exam:submit', { examId: id, answers, reason });

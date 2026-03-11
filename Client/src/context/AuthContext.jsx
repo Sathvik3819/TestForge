@@ -4,9 +4,7 @@ import API from '../api';
 export const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null);
-
-    useEffect(() => {
+    const [user, setUser] = useState(() => {
         const token = localStorage.getItem('token');
         const cachedUser = localStorage.getItem('user');
         if (token) {
@@ -14,25 +12,26 @@ export function AuthProvider({ children }) {
             if (cachedUser) {
                 try {
                     parsedUser = JSON.parse(cachedUser);
-                } catch (err) {
-                    parsedUser = {};
-                }
+                } catch (err) { }
             }
-            // if we don't have createdAt or other fresh info, fetch from server
-            if (!parsedUser.createdAt) {
-                API.get('/auth/me')
-                    .then((res) => {
-                        const fresh = { token, ...res.data };
-                        setUser(fresh);
-                        localStorage.setItem('user', JSON.stringify(res.data));
-                    })
-                    .catch(() => {
-                        // ignore, maybe token expired
-                        setUser({ token, ...parsedUser });
-                    });
-            } else {
-                setUser({ token, ...parsedUser });
-            }
+            return { token, ...parsedUser };
+        }
+        return null;
+    });
+
+    useEffect(() => {
+        const token = localStorage.getItem('token');
+        // if we don't have createdAt or other fresh info, fetch from server securely in the background
+        if (token && user && !user.createdAt) {
+            API.get('/auth/me')
+                .then((res) => {
+                    const fresh = { token, ...res.data };
+                    setUser(fresh);
+                    localStorage.setItem('user', JSON.stringify(res.data));
+                })
+                .catch(() => {
+                    // ignore, maybe token expired or offline
+                });
         }
     }, []);
 

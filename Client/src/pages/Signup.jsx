@@ -6,7 +6,6 @@ export default function Signup() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('student');
   const { signup } = useContext(AuthContext);
   const navigate = useNavigate();
   const [error, setError] = useState(null);
@@ -14,7 +13,7 @@ export default function Signup() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await signup({ name, email, password, role });
+      await signup({ name, email, password });
       navigate('/login');
     } catch (err) {
       setError(err.response?.data?.msg || 'Signup failed');
@@ -63,14 +62,6 @@ export default function Signup() {
               placeholder='Choose a strong password'
               required
             />
-          </div>
-
-          <div>
-            <label htmlFor='role'>Role</label>
-            <select id='role' value={role} onChange={(e) => setRole(e.target.value)}>
-              <option value='student'>Student</option>
-              <option value='admin'>Admin</option>
-            </select>
           </div>
 
           <button type='submit' className='btn auth-submit'>Create Account</button>

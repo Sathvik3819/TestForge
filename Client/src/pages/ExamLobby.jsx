@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import API from '../api';
 
 function getClientId(examId) {
@@ -13,6 +13,7 @@ function getClientId(examId) {
 
 export default function ExamLobby() {
   const { id } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const [lobby, setLobby] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -20,6 +21,8 @@ export default function ExamLobby() {
   const [error, setError] = useState('');
 
   const clientId = useMemo(() => getClientId(id), [id]);
+  const backTarget = location.state?.from || '/dashboard';
+  const backLabel = backTarget.startsWith('/groups/') ? 'Back to class' : 'Back to classes';
 
   useEffect(() => {
     const loadLobby = async () => {
@@ -100,8 +103,8 @@ export default function ExamLobby() {
             {error && <div className='alert error'>{error}</div>}
 
             <div className='exam-lobby-actions'>
-              <button type='button' className='btn secondary' onClick={() => navigate('/exams')}>
-                Back to Exams
+              <button type='button' className='btn secondary' onClick={() => navigate(backTarget)}>
+                {backLabel}
               </button>
               {lobby.hasActiveSession ? (
                 <button type='button' className='btn' onClick={handleResume}>

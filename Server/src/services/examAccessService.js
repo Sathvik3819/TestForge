@@ -35,13 +35,18 @@ async function syncExamStatus(exam) {
 
 async function ensureExamMembership({ userId, groupId }) {
   const membership = await GroupMember.findOne({ userId, groupId });
-  if (!membership) {
-    const err = new Error("You are not a member of this exam's group");
-    err.statusCode = 403;
-    throw err;
+  if (membership) return membership;
+
+  // If not a member, check if user is the admin/creator of the group
+  const Group = require("../models/Group");
+  const group = await Group.findById(groupId);
+  if (group && group.createdBy.toString() === userId.toString()) {
+    return { role: 'admin', userId, groupId }; // Dummy membership object for admins
   }
 
-  return membership;
+  const err = new Error("You are not a member of this exam's group");
+  err.statusCode = 403;
+  throw err;
 }
 
 async function validateExamAccessForStart({ exam, userId }) {
@@ -111,18 +116,18 @@ async function getExamLobbyState({ exam, userId }) {
   const { start, end } = getExamWindow(exam);
   const activeSession = membership
     ? await ExamSession.findOne({
-        exam: exam._id,
-        user: userId,
-        submitted: false,
-        status: "active",
-      })
+      exam: exam._id,
+      user: userId,
+      submitted: false,
+      status: "active",
+    })
     : null;
   const submittedAttempts = membership
     ? await ExamSession.countDocuments({
-        exam: exam._id,
-        user: userId,
-        submitted: true,
-      })
+      exam: exam._id,
+      user: userId,
+      submitted: true,
+    })
     : 0;
 
   const rules = [

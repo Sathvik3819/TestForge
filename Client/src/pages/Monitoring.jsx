@@ -6,10 +6,8 @@ import { createAuthedSocket } from '../socket';
 const adminSidebar = [
   { label: 'Dashboard', to: '/admin' },
   { label: 'Create Exam', to: '/create-exam' },
-  { label: 'Manage Exams', to: '/exams' },
   { label: 'Candidates', to: '/monitoring' },
   { label: 'Monitoring', to: '/monitoring' },
-  { label: 'Results', to: '/results' },
 ];
 
 export default function Monitoring() {

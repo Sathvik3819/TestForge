@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import API from '../api';
 
 function createQuestion() {
@@ -32,10 +33,13 @@ function mapExamQuestion(question) {
 }
 
 export default function AdminCreateExam({ onExamCreated, editExamId }) {
+    const location = useLocation();
+    const navigate = useNavigate();
+
     const [form, setForm] = useState({
         title: '',
         description: '',
-        groupId: '',
+        groupId: location.state?.groupId || '',
         duration: 60,
         startTime: '',
         marksPerQuestion: 1,
@@ -53,8 +57,8 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
     useEffect(() => {
         const loadGroups = async () => {
             try {
-                const res = await API.get('/groups/my');
-                setGroups((res.data || []).filter((group) => group.membershipRole === 'admin'));
+                const res = await API.get('/groups/created');
+                setGroups(res.data || []);
             } catch (err) {
                 console.error(err);
             }
@@ -196,9 +200,13 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
                 resetForm();
             }
 
-            if (onExamCreated) {
-                setTimeout(onExamCreated, 1000);
-            }
+            setTimeout(() => {
+                if (location.state?.groupId) {
+                    navigate(`/groups/${location.state.groupId}`);
+                } else if (onExamCreated) {
+                    onExamCreated();
+                }
+            }, 1000);
         } catch (err) {
             setStatus(err.response?.data?.msg || err.response?.data?.error || 'Failed to save exam');
         } finally {
@@ -218,7 +226,7 @@ export default function AdminCreateExam({ onExamCreated, editExamId }) {
                             required
                             value={form.groupId}
                             onChange={(e) => setForm((prev) => ({ ...prev, groupId: e.target.value }))}
-                            disabled={Boolean(editExamId)}
+                            disabled={Boolean(editExamId) || Boolean(location.state?.groupId)}
                         >
                             <option value=''>Select group</option>
                             {groups.map((group) => (

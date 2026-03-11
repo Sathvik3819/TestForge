@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import API from '../api';
 import ResultChart from '../components/ResultChart';
+import { normalizeExamList } from '../examPayload';
 
-export default function AdminResults({ selectedExamId: propSelectedExamId }) {
+export default function AdminResults({ selectedExamId: propSelectedExamId, groupId }) {
     const [exams, setExams] = useState([]);
     const [selectedExamId, setSelectedExamId] = useState(propSelectedExamId || '');
     const [results, setResults] = useState([]);
@@ -14,11 +15,12 @@ export default function AdminResults({ selectedExamId: propSelectedExamId }) {
         const fetchExams = async () => {
             try {
                 setLoading(true);
-                const res = await API.get('/exams');
-                setExams(res.data || []);
+                const res = await API.get(groupId ? `/groups/${groupId}/exams` : '/exams?as=admin');
+                const nextExams = normalizeExamList(res.data);
+                setExams(nextExams);
                 // If no exam selected from manage exams, default to first
-                if (!propSelectedExamId && res.data && res.data.length > 0) {
-                    setSelectedExamId(res.data[0]._id);
+                if (!propSelectedExamId && nextExams.length > 0) {
+                    setSelectedExamId(nextExams[0]._id);
                 }
             } catch (err) {
                 console.error(err);
@@ -27,7 +29,7 @@ export default function AdminResults({ selectedExamId: propSelectedExamId }) {
             }
         };
         fetchExams();
-    }, [propSelectedExamId]);
+    }, [propSelectedExamId, groupId]);
 
     useEffect(() => {
         if (!selectedExamId) return;
@@ -75,11 +77,15 @@ export default function AdminResults({ selectedExamId: propSelectedExamId }) {
     };
 
     return (
-        <section className='admin-section'>
-            <h2>Exam Results & Analytics</h2>
+        <section className={groupId ? '' : 'admin-section'}>
+            {!groupId && <h2>Exam Results & Analytics</h2>}
 
             {loading ? (
                 <p className='muted'>Loading exams...</p>
+            ) : exams.length === 0 ? (
+                <div className='card'>
+                    <p className='muted'>No exams available.</p>
+                </div>
             ) : (
                 <>
                     <div className='card'>

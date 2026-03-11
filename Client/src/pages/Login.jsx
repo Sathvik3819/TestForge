@@ -12,8 +12,8 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const loggedInUser = await login(email, password);
-      navigate(loggedInUser?.role === 'admin' ? '/admin' : '/dashboard');
+      await login(email, password);
+      navigate('/dashboard');
     } catch (err) {
       setError(err.response?.data?.msg || 'Login failed');
     }

@@ -1,18 +1,15 @@
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import API from '../api';
 import Sidebar from '../components/Sidebar';
-import { AuthContext } from '../context/AuthContext';
 
 export default function Groups() {
-  const { user } = useContext(AuthContext);
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const sidebarItems = [
     { label: 'Dashboard', to: '/dashboard' },
-    ...(user?.role === 'admin' ? [{ label: 'Admin Panel', to: '/admin' }] : []),
     { label: 'Groups', to: '/groups' },
     { label: 'My Exams', to: '/exams' },
   ];
@@ -20,7 +17,7 @@ export default function Groups() {
   const loadGroups = async () => {
     try {
       setLoading(true);
-      const res = await API.get('/groups/my');
+      const res = await API.get('/groups/joined');
       setGroups(res.data || []);
     } catch (err) {
       setError('Failed to load groups');
@@ -54,12 +51,9 @@ export default function Groups() {
 
         <section className='card'>
           <div className='split'>
-            <h3>My Groups</h3>
+            <h3>Joined Groups</h3>
             <div className='groups-page-links'>
               <Link to='/dashboard' className='btn secondary'>Student Panel</Link>
-              {user?.role === 'admin' && (
-                <Link to='/admin' className='btn secondary'>Admin Panel</Link>
-              )}
             </div>
           </div>
           {loading ? (
@@ -71,7 +65,6 @@ export default function Groups() {
                   <tr>
                     <th>Group</th>
                     <th>Description</th>
-                    <th>Role</th>
                     <th>Joined</th>
                     <th>Action</th>
                   </tr>
@@ -85,7 +78,6 @@ export default function Groups() {
                           <div className='muted'>Code: {group.joinCode}</div>
                         </td>
                         <td>{group.description || 'No description'}</td>
-                        <td>{group.membershipRole || 'student'}</td>
                         <td>{group.joinedAt ? new Date(group.joinedAt).toLocaleDateString() : '-'}</td>
                         <td>
                           <Link to={`/groups/${group._id}`} className='btn secondary'>
@@ -96,7 +88,7 @@ export default function Groups() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan='5'>No groups joined yet.</td>
+                      <td colSpan='4'>No groups joined yet.</td>
                     </tr>
                   )}
                 </tbody>

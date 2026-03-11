@@ -2,7 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import NavBar from './components/NavBar';
 import ProtectedRoute from './components/ProtectedRoute';
-import RoleRoute from './components/RoleRoute';
+
 import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
@@ -14,6 +14,7 @@ import ExamPage from './pages/ExamPage';
 import ExamResults from './pages/ExamResults';
 import Groups from './pages/Groups';
 import GroupDetail from './pages/GroupDetail';
+import JoinGroup from './pages/JoinGroup';
 import Results from './pages/Results';
 import Profile from './pages/Profile';
 import './App.css';
@@ -41,9 +42,7 @@ function App() {
                 path='/admin'
                 element={
                   <ProtectedRoute>
-                    <RoleRoute roles={['admin']}>
-                      <AdminPanel />
-                    </RoleRoute>
+                    <AdminPanel />
                   </ProtectedRoute>
                 }
               />
@@ -76,6 +75,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <ExamLobby />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path='/join/:token'
+                element={
+                  <ProtectedRoute>
+                    <JoinGroup />
                   </ProtectedRoute>
                 }
               />

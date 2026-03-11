@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import API from '../api';
 import Sidebar from '../components/Sidebar';
 import ResultChart from '../components/ResultChart';
@@ -8,23 +9,21 @@ import AdminMonitoring from '../sections/AdminMonitoring';
 import AdminResults from '../sections/AdminResults';
 import AdminGroups from '../sections/AdminGroups';
 import { createAuthedSocket } from '../socket';
+import { normalizeExamList } from '../examPayload';
 
 const adminSidebarItems = [
     { label: 'Dashboard', section: 'dashboard' },
-    { label: 'Create Exam', section: 'create' },
-    { label: 'Manage Exams', section: 'manage' },
-    { label: 'Groups', section: 'groups' },
     { label: 'Live Monitoring', section: 'monitoring' },
-    { label: 'Results', section: 'results' },
     { label: 'Candidates', section: 'candidates' },
 ];
 
 export default function AdminPanel() {
-    const [activeSection, setActiveSection] = useState('dashboard');
+    const location = useLocation();
+    const [activeSection, setActiveSection] = useState(location.state?.section || 'dashboard');
     const [exams, setExams] = useState([]);
     const [monitorRows, setMonitorRows] = useState([]);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
-    const [selectedResultsExamId, setSelectedResultsExamId] = useState('');
+    const [selectedResultsExamId, setSelectedResultsExamId] = useState(location.state?.examId || '');
     const [editExamId, setEditExamId] = useState(null);
     const [resultSummary, setResultSummary] = useState(null);
     const [groups, setGroups] = useState([]);
@@ -34,15 +33,15 @@ export default function AdminPanel() {
         const fetchData = async () => {
             try {
                 const [examRes, monitorRes, summaryRes, groupsRes] = await Promise.all([
-                    API.get('/exams'),
+                    API.get('/exams?as=admin'),
                     API.get('/exams/monitor/live'),
                     API.get('/exams/results/admin/summary'),
-                    API.get('/groups/my'),
+                    API.get('/groups/created'),
                 ]);
-                setExams(Array.isArray(examRes.data) ? examRes.data : []);
+                setExams(normalizeExamList(examRes.data));
                 setMonitorRows(monitorRes.data || []);
                 setResultSummary(summaryRes.data || null);
-                setGroups((groupsRes.data || []).filter((group) => group.membershipRole === 'admin'));
+                setGroups(groupsRes.data || []);
             } catch (err) {
                 console.error(err);
             }
@@ -144,26 +143,31 @@ export default function AdminPanel() {
         switch (activeSection) {
             case 'dashboard':
                 return (
-                    <section className='admin-section'>
-                        <h2>Admin Dashboard</h2>
-                        <div className='stats-grid mb-1'>
-                            <div className='card stat-card'>
-                                <p>Total Exams</p>
-                                <strong>{dashboardStats.totalExams}</strong>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <section className='admin-section' style={{ margin: '0px' }}>
+                            <h2>Admin Dashboard</h2>
+                            <div className='stats-grid'>
+                                <div className='card stat-card'>
+                                    <p>Total Exams</p>
+                                    <strong>{dashboardStats.totalExams}</strong>
+                                </div>
+                                <div className='card stat-card'>
+                                    <p>Active Candidates</p>
+                                    <strong>{dashboardStats.activeCandidates}</strong>
+                                </div>
+                                <div className='card stat-card'>
+                                    <p>Ongoing Exams</p>
+                                    <strong>{dashboardStats.ongoingExams}</strong>
+                                </div>
+                                <div className='card stat-card'>
+                                    <p>Submitted Sessions</p>
+                                    <strong>{dashboardStats.submittedSessions}</strong>
+                                </div>
                             </div>
-                            <div className='card stat-card'>
-                                <p>Active Candidates</p>
-                                <strong>{dashboardStats.activeCandidates}</strong>
-                            </div>
-                            <div className='card stat-card'>
-                                <p>Ongoing Exams</p>
-                                <strong>{dashboardStats.ongoingExams}</strong>
-                            </div>
-                            <div className='card stat-card'>
-                                <p>Submitted Sessions</p>
-                                <strong>{dashboardStats.submittedSessions}</strong>
-                            </div>
-                        </div>
+
+                        </section>
+
+                        <AdminGroups groups={groups} onRefresh={() => setRefreshTrigger((prev) => prev + 1)} />
 
                         <div className='grid mt-2'>
                             <ResultChart
@@ -175,7 +179,7 @@ export default function AdminPanel() {
                                 data={chartData.scores}
                             />
                         </div>
-                    </section>
+                    </div>
                 );
 
             case 'create':
@@ -191,8 +195,7 @@ export default function AdminPanel() {
                     />
                 );
 
-            case 'groups':
-                return <AdminGroups groups={groups} onRefresh={() => setRefreshTrigger((prev) => prev + 1)} />;
+
 
             case 'monitoring':
                 return <AdminMonitoring rows={monitorRows} />;

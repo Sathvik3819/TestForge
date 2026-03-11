@@ -1,0 +1,5 @@
+ValidationError: ExamSession validation failed: groupId: Path `groupId` is required.
+    at Document.invalidate (C:\Users\dell\OneDrive\Desktop\TestForge\Server\node_modules\mongoose\lib\document.js:3221:32)
+    at C:\Users\dell\OneDrive\Desktop\TestForge\Server\node_modules\mongoose\lib\document.js:3014:17
+    at C:\Users\dell\OneDrive\Desktop\TestForge\Server\node_modules\mongoose\lib\schematype.js:1368:9
+    at process.processTicksAndRejections (node:internal/process/task_queues:85:11)

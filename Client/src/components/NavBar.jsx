@@ -8,7 +8,7 @@ export default function NavBar() {
   return (
     <header className='nav-wrap shadow'>
       <nav className='navbar'>
-        <Link to='/' className='brand'>
+        <Link to='/dashboard' className='brand'>
           TestForge
         </Link>
 
@@ -18,11 +18,9 @@ export default function NavBar() {
               <Link to='/dashboard' className='nav-link'>
                 Student Panel
               </Link>
-              {user.role === 'admin' && (
-                <Link to='/admin' className='nav-link'>
-                  Admin Panel
-                </Link>
-              )}
+              <Link to='/admin' className='nav-link'>
+                Admin Panel
+              </Link>
               <Link to='/profile' className='nav-link'>
                 Profile
               </Link>
